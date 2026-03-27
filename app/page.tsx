@@ -10,6 +10,7 @@ import BreathingCircle from "@/components/BreathingCircle";
 import SelfReport from "@/components/SelfReport";
 import MindfulOverlay from "@/components/MindfulOverlay";
 import PillarTint from "@/components/PillarTint";
+import SessionSidebar from "@/components/SessionSidebar";
 import FeatureTour from "@/components/FeatureTour";
 import {
   SessionPhase,
@@ -477,6 +478,7 @@ export default function Home() {
   if (showClosing) {
     return (
       <>
+        <SessionSidebar currentSessionId={chatSessionId} onNewSession={handleNewSession} />
         <PillarTint tint={tourTintOverride || activeTint} />
         <SelfReport onChange={handleAmbientReport} />
         <MindfulOverlay
@@ -524,6 +526,7 @@ export default function Home() {
   if (session.phase === "arrival") {
     return (
       <>
+        <SessionSidebar currentSessionId={chatSessionId} onNewSession={handleNewSession} />
         <PillarTint tint="neutral" />
         <SelfReport onChange={handleAmbientReport} />
         <IntentionScreen
@@ -542,6 +545,7 @@ export default function Home() {
   // Main conversation
   return (
     <>
+      <SessionSidebar currentSessionId={chatSessionId} onNewSession={handleNewSession} />
       <PillarTint tint={tourTintOverride || activeTint} />
       <SelfReport onChange={handleAmbientReport} />
       <MindfulOverlay
