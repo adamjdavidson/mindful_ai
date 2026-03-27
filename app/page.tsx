@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import IntentionScreen from "@/components/IntentionScreen";
 import ChatInterface from "@/components/ChatInterface";
 import MeditationScreen from "@/components/MeditationScreen";
@@ -10,6 +10,7 @@ import BreathingCircle from "@/components/BreathingCircle";
 import SelfReport from "@/components/SelfReport";
 import MindfulOverlay from "@/components/MindfulOverlay";
 import PillarTint from "@/components/PillarTint";
+import FeatureTour from "@/components/FeatureTour";
 import {
   SessionPhase,
   Message,
@@ -53,6 +54,11 @@ export default function Home() {
   const [overlayDismissed, setOverlayDismissed] = useState<number>(0);
   const [gratitudeShown, setGratitudeShown] = useState(false);
   const [showValuesAction, setShowValuesAction] = useState(false);
+
+  // --- Tour state (Tasks 4-7) ---
+  const [inspectTourId, setInspectTourId] = useState<string | null>(null);
+  const [showTour, setShowTour] = useState(false);
+  const [showOptionHint, setShowOptionHint] = useState(false);
 
   const exchangeCountRef = useRef(0);
   const lastRetryContentRef = useRef<string>("");
@@ -308,6 +314,66 @@ export default function Home() {
     }
   }, [session.phase]);
 
+  // --- Task 4: Inspect mode (Option-click) ---
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!e.altKey) return;
+      let el = e.target as HTMLElement | null;
+      while (el) {
+        const tourId = el.getAttribute("data-tour-id");
+        if (tourId) {
+          e.preventDefault();
+          e.stopPropagation();
+          setInspectTourId(tourId);
+          return;
+        }
+        el = el.parentElement;
+      }
+    };
+    window.addEventListener("click", handler, true);
+    return () => window.removeEventListener("click", handler, true);
+  }, []);
+
+  // --- Task 5: Listen for tour start from Controls (custom event) ---
+  useEffect(() => {
+    const handler = () => setShowTour(true);
+    window.addEventListener("mindful-start-tour", handler);
+    return () => window.removeEventListener("mindful-start-tour", handler);
+  }, []);
+
+  // --- Task 6: First-visit auto-launch ---
+  useEffect(() => {
+    const completed = localStorage.getItem("mindful-tour-completed");
+    if (!completed) {
+      const timer = setTimeout(() => setShowTour(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Tour close handler (marks tour as completed)
+  const handleTourClose = useCallback(() => {
+    setShowTour(false);
+    localStorage.setItem("mindful-tour-completed", "true");
+  }, []);
+
+  // Tour complete handler (user clicked "Done" on last step)
+  const handleTourComplete = useCallback(() => {
+    localStorage.setItem("mindful-tour-completed", "true");
+    // Task 7: Show option-click hint after tour completion
+    const hintShown = localStorage.getItem("mindful-option-hint-shown");
+    if (!hintShown) {
+      setShowOptionHint(true);
+      localStorage.setItem("mindful-option-hint-shown", "true");
+    }
+  }, []);
+
+  // --- Task 7: Auto-dismiss option hint ---
+  useEffect(() => {
+    if (!showOptionHint) return;
+    const timer = setTimeout(() => setShowOptionHint(false), 5000);
+    return () => clearTimeout(timer);
+  }, [showOptionHint]);
+
   // Determine what to show in overlay
   let overlayContent: string | null = null;
   let overlayPillar: "awareness" | "connection" | "insight" | "purpose" | null = null;
@@ -337,6 +403,9 @@ export default function Home() {
           isLoading={isMeditationLoading}
           onComplete={handleMeditationComplete}
         />
+        <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
   }
@@ -352,6 +421,9 @@ export default function Home() {
           isLoading={isReflectionLoading}
           onComplete={handleReflectionComplete}
         />
+        <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
   }
@@ -382,6 +454,9 @@ export default function Home() {
             New session
           </button>
         </div>
+        <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
   }
@@ -389,9 +464,14 @@ export default function Home() {
   // Session history
   if (showHistory) {
     return (
-      <SessionHistory
-        onClose={() => setShowHistory(false)}
-      />
+      <>
+        <SessionHistory
+          onClose={() => setShowHistory(false)}
+        />
+        <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
+      </>
     );
   }
 
@@ -407,6 +487,9 @@ export default function Home() {
           onShowHistory={() => setShowHistory(true)}
           startPhase={postMeditation ? "intention" : "breathing"}
         />
+        <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
   }
@@ -435,6 +518,38 @@ export default function Home() {
         onError={handleRetry}
         pacingMultiplier={pacingMultiplier}
       />
+      <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
+      <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+      {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
     </>
+  );
+}
+
+// --- Task 7: Post-tour floating hint ---
+function OptionHint({ onDismiss }: { onDismiss: () => void }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Fade in
+    const t = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+
+  const handleDismiss = () => {
+    setVisible(false);
+    setTimeout(onDismiss, 300);
+  };
+
+  return (
+    <div
+      onClick={handleDismiss}
+      className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-background/85 backdrop-blur-sm border border-warm-gray rounded-xl text-sm text-muted px-4 py-3 cursor-pointer select-none"
+      style={{
+        opacity: visible ? 1 : 0,
+        transition: "opacity 300ms ease",
+      }}
+    >
+      Tip: Hold &#x2325; Option and click any element to learn more about it
+    </div>
   );
 }

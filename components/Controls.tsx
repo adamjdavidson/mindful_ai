@@ -4,7 +4,11 @@ import { useState, useEffect, useRef } from "react";
 
 type SoundOption = "off" | "rain" | "bowls";
 
-export default function Controls() {
+interface ControlsProps {
+  onStartTour?: () => void;
+}
+
+export default function Controls({ onStartTour }: ControlsProps = {}) {
   const [isDark, setIsDark] = useState(false);
   const [sound, setSound] = useState<SoundOption>("off");
   const [isOpen, setIsOpen] = useState(false);
@@ -81,6 +85,23 @@ export default function Controls() {
 
       {isOpen && (
         <div className="absolute bottom-14 right-0 w-56 bg-background border border-warm-gray rounded-xl p-4 shadow-lg animate-fade-in">
+          {/* How it works */}
+          <button
+            onClick={() => {
+              if (onStartTour) {
+                onStartTour();
+              } else {
+                // Dispatch custom event for cross-component communication
+                window.dispatchEvent(new CustomEvent("mindful-start-tour"));
+              }
+              setIsOpen(false);
+            }}
+            className="flex items-center gap-2 w-full text-sm text-foreground hover:text-sage transition-colors mb-3 pb-3 border-b border-warm-gray"
+          >
+            <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-xs leading-none">?</span>
+            How it works
+          </button>
+
           {/* Dark mode */}
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm text-foreground">Dark mode</span>
