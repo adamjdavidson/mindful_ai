@@ -1,4 +1,10 @@
-import { kv } from '@vercel/kv';
+import { createClient } from '@vercel/kv';
+
+// Support both prefixed (Upstash integration) and unprefixed (manual) env var names
+const kv = createClient({
+  url: process.env.KV_REST_API_URL || process.env.ai_mindful_KV_REST_API_URL || '',
+  token: process.env.KV_REST_API_TOKEN || process.env.ai_mindful_KV_REST_API_TOKEN || '',
+});
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
