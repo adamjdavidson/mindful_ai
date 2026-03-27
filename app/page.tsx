@@ -59,6 +59,7 @@ export default function Home() {
   const [inspectTourId, setInspectTourId] = useState<string | null>(null);
   const [showTour, setShowTour] = useState(false);
   const [showOptionHint, setShowOptionHint] = useState(false);
+  const [tourTintOverride, setTourTintOverride] = useState<"blue" | "rose" | "violet" | "amber" | "neutral" | null>(null);
 
   const exchangeCountRef = useRef(0);
   const lastRetryContentRef = useRef<string>("");
@@ -353,6 +354,7 @@ export default function Home() {
   // Tour close handler (marks tour as completed)
   const handleTourClose = useCallback(() => {
     setShowTour(false);
+    setTourTintOverride(null);
     localStorage.setItem("mindful-tour-completed", "true");
   }, []);
 
@@ -396,7 +398,7 @@ export default function Home() {
   if (meditationText || isMeditationLoading) {
     return (
       <>
-        <PillarTint tint={activeTint} />
+        <PillarTint tint={tourTintOverride || activeTint} />
         {showAmbientDots && <SelfReport onChange={handleAmbientReport} />}
         <MeditationScreen
           text={meditationText}
@@ -404,7 +406,7 @@ export default function Home() {
           onComplete={handleMeditationComplete}
         />
         <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
-        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} onTintOverride={setTourTintOverride} />
         {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
@@ -414,7 +416,7 @@ export default function Home() {
   if (session.phase === "reflection") {
     return (
       <>
-        <PillarTint tint={activeTint} />
+        <PillarTint tint={tourTintOverride || activeTint} />
         <SelfReport onChange={handleAmbientReport} />
         <ReflectionScreen
           reflectionText={reflectionText}
@@ -422,7 +424,7 @@ export default function Home() {
           onComplete={handleReflectionComplete}
         />
         <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
-        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} onTintOverride={setTourTintOverride} />
         {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
@@ -432,7 +434,7 @@ export default function Home() {
   if (showClosing) {
     return (
       <>
-        <PillarTint tint={activeTint} />
+        <PillarTint tint={tourTintOverride || activeTint} />
         <SelfReport onChange={handleAmbientReport} />
         <MindfulOverlay
           content={overlayContent}
@@ -455,7 +457,7 @@ export default function Home() {
           </button>
         </div>
         <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
-        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} onTintOverride={setTourTintOverride} />
         {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
@@ -469,7 +471,7 @@ export default function Home() {
           onClose={() => setShowHistory(false)}
         />
         <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
-        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} onTintOverride={setTourTintOverride} />
         {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
@@ -488,7 +490,7 @@ export default function Home() {
           startPhase={postMeditation ? "intention" : "breathing"}
         />
         <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
-        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+        <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} onTintOverride={setTourTintOverride} />
         {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
       </>
     );
@@ -497,7 +499,7 @@ export default function Home() {
   // Main conversation
   return (
     <>
-      <PillarTint tint={activeTint} />
+      <PillarTint tint={tourTintOverride || activeTint} />
       <SelfReport onChange={handleAmbientReport} />
       <MindfulOverlay
         content={overlayContent}
@@ -519,7 +521,7 @@ export default function Home() {
         pacingMultiplier={pacingMultiplier}
       />
       <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
-      <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} />
+      <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} onTintOverride={setTourTintOverride} />
       {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
     </>
   );
