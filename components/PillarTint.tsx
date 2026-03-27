@@ -57,6 +57,7 @@ export default function PillarTint({ tint }: PillarTintProps) {
   return (
     <div
       className="fixed inset-0 pointer-events-none z-[1]"
+      data-tour-id="pillar-tint"
       style={{
         backgroundColor: getColor(tint, isDark),
         transition: "background-color 4s ease",

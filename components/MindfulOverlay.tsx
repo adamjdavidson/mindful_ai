@@ -88,6 +88,7 @@ export default function MindfulOverlay({
   return (
     <div
       role="status"
+      data-tour-id="mindful-overlay"
       aria-live="polite"
       className={`
         fixed z-50

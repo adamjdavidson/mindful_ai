@@ -81,7 +81,7 @@ export default function IntentionScreen({
 
         {/* Phase 2: Meditation question */}
         {phase === "meditation" && (
-          <div className="flex flex-col items-center gap-6 w-full animate-fade-in">
+          <div className="flex flex-col items-center gap-6 w-full animate-fade-in" data-tour-id="meditation-option">
             <p
               className="text-lg text-center leading-relaxed"
               style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
@@ -104,7 +104,7 @@ export default function IntentionScreen({
 
         {/* Phase 3: Intention */}
         {phase === "intention" && (
-          <div className="flex flex-col items-center gap-8 w-full animate-fade-in">
+          <div className="flex flex-col items-center gap-8 w-full animate-fade-in" data-tour-id="intention-setting">
             <h1
               className="text-2xl text-center leading-relaxed"
               style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}

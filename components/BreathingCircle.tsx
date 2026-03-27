@@ -77,7 +77,7 @@ export default function BreathingCircle({
   const phaseLabel = phase === "inhale" ? "Breathe in" : phase === "hold" ? "Hold" : "Breathe out";
 
   return (
-    <div className="flex flex-col items-center gap-6">
+    <div className="flex flex-col items-center gap-6" data-tour-id="breathing-circle">
       <div
         className="relative flex items-center justify-center"
         style={{ width: size, height: size }}

@@ -367,7 +367,7 @@ export default function Home() {
           pillar={overlayPillar}
           onDismiss={handleOverlayDismiss}
         />
-        <div className="flex flex-1 flex-col items-center justify-center px-6 animate-fade-in gap-8">
+        <div className="flex flex-1 flex-col items-center justify-center px-6 animate-fade-in gap-8" data-tour-id="session-closing">
           <BreathingCircle size={120} showLabel={false} />
           <p
             className="text-xl text-center max-w-sm leading-relaxed"

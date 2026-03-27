@@ -55,6 +55,7 @@ export default function SelfReport({ onChange }: SelfReportProps) {
   return (
     <div
       className="fixed bottom-4 left-4 z-30 flex items-center gap-1.5"
+      data-tour-id="self-report"
       role="group"
       aria-label="How present do you feel? Scattered to Present"
     >
