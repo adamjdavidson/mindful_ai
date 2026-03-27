@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useState, useEffect, useRef } from "react";
 import TimelineRow from "@/components/TimelineRow";
 import ACIPBar from "@/components/ACIPBar";
@@ -91,33 +91,9 @@ export default function CompanionPage() {
     return acc;
   }, {});
 
-  // Unauthenticated state
-  if (status === "unauthenticated") {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center px-4">
-        <PillarTint tint="neutral" />
-        <div className="max-w-[640px] w-full text-center space-y-6">
-          <p className="font-sans text-lg text-muted">
-            Connect your calendar to see your day with mindful coaching.
-          </p>
-          <button
-            onClick={() => signIn("google")}
-            className="px-6 py-2.5 rounded-lg text-sm transition-colors"
-            style={{
-              backgroundColor: "var(--sage)",
-              color: "var(--background)",
-            }}
-          >
-            Connect Google Calendar
-          </button>
-        </div>
-        <SelfReport />
-      </div>
-    );
-  }
-
-  // Loading state
-  if (status === "loading" || loading) {
+  // Unauthenticated users are redirected to /login by middleware.
+  // Loading state (also covers brief "unauthenticated" before session resolves)
+  if (status !== "authenticated" || loading) {
     return (
       <div className="flex-1 flex flex-col items-center px-4 pt-8">
         <PillarTint tint="neutral" />
@@ -149,25 +125,15 @@ export default function CompanionPage() {
     );
   }
 
-  // Needs reconnect
+  // Needs reconnect — sign out and back in to refresh calendar tokens
   if (error === "needs_reconnect") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-4">
         <PillarTint tint="neutral" />
         <div className="max-w-[640px] w-full text-center space-y-6">
           <p className="font-sans text-lg text-muted">
-            Your calendar connection needs to be refreshed.
+            Your calendar connection needs to be refreshed. Please sign out and sign back in.
           </p>
-          <button
-            onClick={() => signIn("google")}
-            className="px-6 py-2.5 rounded-lg text-sm transition-colors"
-            style={{
-              backgroundColor: "var(--sage)",
-              color: "var(--background)",
-            }}
-          >
-            Reconnect Google Calendar
-          </button>
         </div>
         <SelfReport />
       </div>
