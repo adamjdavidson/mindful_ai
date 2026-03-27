@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Source_Serif_4, Source_Sans_3 } from "next/font/google";
 import Controls from "@/components/Controls";
 import NavToggle from "@/components/NavToggle";
+import Providers from "@/components/Providers";
 import "./globals.css";
 
 const sourceSerif = Source_Serif_4({
@@ -33,9 +34,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col antialiased">
-        <NavToggle />
-        {children}
-        <Controls />
+        <Providers>
+          <NavToggle />
+          {children}
+          <Controls />
+        </Providers>
       </body>
     </html>
   );
