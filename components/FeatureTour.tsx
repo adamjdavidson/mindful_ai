@@ -565,16 +565,18 @@ export default function FeatureTour({
         />
       )}
 
-      {/* Simulation portal */}
+      {/* Simulation portal — position matches where the real element appears */}
       {needsSimulation && SimComponent && (
         <div
           ref={simRef}
           style={{
             position: "fixed",
             zIndex: 101,
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
+            ...(stop.id === "mindful-overlay"
+              ? { bottom: 24, right: 24 }
+              : stop.id === "self-report"
+                ? { bottom: 16, left: 16 }
+                : { top: "50%", left: "50%", transform: "translate(-50%, -50%)" }),
           }}
         >
           <SimComponent />
