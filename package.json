@@ -9,11 +9,19 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.64",
+    "@ai-sdk/react": "^3.0.143",
     "@anthropic-ai/sdk": "^0.80.0",
+    "@auth/prisma-adapter": "^2.11.1",
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
     "@vercel/kv": "^3.0.0",
+    "ai": "^6.0.141",
+    "dotenv": "^17.3.1",
     "googleapis": "^171.4.0",
     "next": "16.2.1",
     "next-auth": "^4.24.13",
+    "pg": "^8.20.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0"
@@ -25,6 +33,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "prisma": "^7.6.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.2"

@@ -1,12 +1,10 @@
-import NextAuth, { type AuthOptions } from 'next-auth';
-import GoogleProvider from 'next-auth/providers/google';
-import {
-  storeCalendarTokens,
-  registerUser,
-  clearReconnect,
-} from '@/lib/companion';
+import NextAuth, { type AuthOptions } from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import { prisma } from "@/lib/db";
 
 export const authOptions: AuthOptions = {
+  adapter: PrismaAdapter(prisma) as any,
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -14,30 +12,18 @@ export const authOptions: AuthOptions = {
       authorization: {
         params: {
           scope:
-            'openid email profile https://www.googleapis.com/auth/calendar.readonly',
-          access_type: 'offline',
-          prompt: 'consent',
+            "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+          access_type: "offline",
+          prompt: "consent",
         },
       },
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
-    async jwt({ token, account }) {
-      if (account && token.sub) {
-        await storeCalendarTokens(token.sub, {
-          access_token: account.access_token,
-          refresh_token: account.refresh_token,
-          expires_at: account.expires_at,
-        });
-        await registerUser(token.sub);
-        await clearReconnect(token.sub);
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user && token.sub) {
-        (session.user as { id?: string }).id = token.sub;
+    async session({ session, user }) {
+      if (session.user) {
+        (session.user as { id?: string }).id = user.id;
       }
       return session;
     },
@@ -45,5 +31,4 @@ export const authOptions: AuthOptions = {
 };
 
 const handler = NextAuth(authOptions);
-
 export { handler as GET, handler as POST };
