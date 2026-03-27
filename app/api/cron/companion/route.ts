@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/db';
 import {
-  getAllUserIds,
   getCoachingForEvent,
   storeCoaching,
   getDailyIntention,
@@ -9,7 +9,14 @@ import {
 import { getTodayEvents } from '@/lib/google-calendar';
 import { scoreEvent, selectPillar } from '@/lib/scoring';
 import { generateCoachingPrompt } from '@/lib/coaching';
-import { sendTelegram, sendReflectionRequest } from '@/lib/notifications';
+import { sendCoachingPrompt, sendTelegramMessage } from '@/lib/telegram';
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -17,15 +24,23 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const userIds = await getAllUserIds();
-  const now = new Date();
-  const results: { userId: string; coached: number; reflections: number }[] = [];
+  // Query only users who have connected Telegram
+  const users = await prisma.user.findMany({
+    where: { telegramChatId: { not: null } },
+    select: { id: true, telegramChatId: true },
+  });
 
-  for (const userId of userIds) {
+  const now = new Date();
+  const results: { userId: string; coached: number; reflections: number; error?: string }[] = [];
+
+  for (const user of users) {
     let coached = 0;
     let reflections = 0;
 
     try {
+      const userId = user.id;
+      const chatId = user.telegramChatId!;
+
       // Skip users who need to reconnect their calendar
       if (await needsReconnect(userId)) continue;
 
@@ -62,13 +77,9 @@ export async function GET(request: NextRequest) {
             intention ?? undefined,
           );
 
-          const sent = await sendTelegram({
-            eventTitle: event.title,
-            coachingPrompt: content,
-            pillar,
-          });
+          try {
+            await sendCoachingPrompt(chatId, event.title, content);
 
-          if (sent) {
             await storeCoaching({
               id: `${event.id}-${Date.now()}`,
               eventId: event.id,
@@ -78,6 +89,8 @@ export async function GET(request: NextRequest) {
               channel: 'telegram',
             });
             coached++;
+          } catch (sendErr) {
+            console.error(`Failed to send coaching to user ${userId}:`, sendErr);
           }
         }
 
@@ -85,16 +98,23 @@ export async function GET(request: NextRequest) {
         if (minsSinceEnd > 0 && minsSinceEnd <= 10) {
           const existing = await getCoachingForEvent(event.id);
           if (existing && !existing.responseScore) {
-            await sendReflectionRequest(event.title);
-            reflections++;
+            try {
+              const text = `How did <i>${escapeHtml(event.title)}</i> go? Reply 1-5`;
+              await sendTelegramMessage(chatId, text, 'HTML');
+              reflections++;
+            } catch (reflErr) {
+              console.error(`Failed to send reflection to user ${userId}:`, reflErr);
+            }
           }
         }
       }
     } catch (error) {
-      console.error(`Cron error for user ${userId}:`, error);
+      console.error(`Cron error for user ${user.id}:`, error);
+      results.push({ userId: user.id, coached, reflections, error: String(error) });
+      continue;
     }
 
-    results.push({ userId, coached, reflections });
+    results.push({ userId: user.id, coached, reflections });
   }
 
   return Response.json({ ok: true, results });
