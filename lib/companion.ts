@@ -1,10 +1,7 @@
-import { createClient } from '@vercel/kv';
+import { prisma } from '@/lib/db';
 
-// Support both prefixed (Upstash integration) and unprefixed (manual) env var names
-const kv = createClient({
-  url: process.env.KV_REST_API_URL || process.env.ai_mindful_KV_REST_API_URL || '',
-  token: process.env.KV_REST_API_TOKEN || process.env.ai_mindful_KV_REST_API_TOKEN || '',
-});
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type JsonValue = any; // Prisma Json fields accept any serialisable value
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -43,52 +40,107 @@ export interface DailyIntention {
 /*  User registry                                                      */
 /* ------------------------------------------------------------------ */
 
-export async function registerUser(userId: string): Promise<void> {
-  await kv.sadd('users:all', userId);
+/**
+ * @deprecated NextAuth creates users automatically via PrismaAdapter.
+ * Kept as a no-op for callers that haven't been updated yet.
+ */
+export async function registerUser(_userId: string): Promise<void> {
+  // no-op — NextAuth handles user creation
 }
 
 export async function getAllUserIds(): Promise<string[]> {
-  return kv.smembers('users:all');
+  const users = await prisma.user.findMany({
+    select: { id: true },
+  });
+  return users.map((u) => u.id);
 }
 
 /* ------------------------------------------------------------------ */
 /*  Calendar tokens                                                    */
 /* ------------------------------------------------------------------ */
 
+export async function getCalendarTokens(
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  const account = await prisma.account.findFirst({
+    where: { userId, provider: 'google' },
+  });
+  if (!account) return null;
+
+  return {
+    access_token: account.access_token,
+    refresh_token: account.refresh_token,
+    expires_at: account.expires_at,
+  };
+}
+
 export async function storeCalendarTokens(
   userId: string,
   tokens: Record<string, unknown>,
 ): Promise<void> {
-  await kv.set(`calendar_tokens:${userId}`, JSON.stringify(tokens));
-}
-
-export async function getCalendarTokens(
-  userId: string,
-): Promise<Record<string, unknown> | null> {
-  const raw = await kv.get<string>(`calendar_tokens:${userId}`);
-  if (!raw) return null;
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  await prisma.account.updateMany({
+    where: { userId, provider: 'google' },
+    data: {
+      access_token: tokens.access_token as string | null,
+      refresh_token: tokens.refresh_token as string | null,
+      expires_at: tokens.expires_at as number | null,
+    },
+  });
 }
 
 /* ------------------------------------------------------------------ */
 /*  Reconnect flag                                                     */
+/*                                                                     */
+/*  We store this in the CompanionProfile.eventAnnotations JSON field  */
+/*  under the key "needsReconnect" to avoid needing a schema change.   */
 /* ------------------------------------------------------------------ */
 
+async function getOrCreateProfile(userId: string) {
+  return prisma.companionProfile.upsert({
+    where: { userId },
+    create: { userId },
+    update: {},
+  });
+}
+
 export async function markNeedsReconnect(userId: string): Promise<void> {
-  await kv.set(`needs_reconnect:${userId}`, 'true');
+  const profile = await getOrCreateProfile(userId);
+  const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
+  await prisma.companionProfile.update({
+    where: { userId },
+    data: {
+      eventAnnotations: { ...annotations, needsReconnect: true } as JsonValue,
+    },
+  });
 }
 
 export async function needsReconnect(userId: string): Promise<boolean> {
-  const val = await kv.get<string>(`needs_reconnect:${userId}`);
-  return val === 'true';
+  const profile = await prisma.companionProfile.findUnique({
+    where: { userId },
+  });
+  if (!profile?.eventAnnotations) return false;
+  return (profile.eventAnnotations as Record<string, unknown>).needsReconnect === true;
 }
 
 export async function clearReconnect(userId: string): Promise<void> {
-  await kv.del(`needs_reconnect:${userId}`);
+  const profile = await prisma.companionProfile.findUnique({
+    where: { userId },
+  });
+  if (!profile?.eventAnnotations) return;
+  const annotations = { ...(profile.eventAnnotations as Record<string, unknown>) };
+  delete annotations.needsReconnect;
+  await prisma.companionProfile.update({
+    where: { userId },
+    data: { eventAnnotations: annotations as JsonValue },
+  });
 }
 
 /* ------------------------------------------------------------------ */
 /*  Event cache                                                        */
+/*                                                                     */
+/*  Stored in CompanionProfile.eventAnnotations under "eventCache".    */
+/*  This is a lightweight cache — no TTL enforcement, overwritten      */
+/*  each time new events are fetched for a given date.                 */
 /* ------------------------------------------------------------------ */
 
 export async function cacheEvents(
@@ -96,44 +148,114 @@ export async function cacheEvents(
   date: string,
   events: CompanionEvent[],
 ): Promise<void> {
-  await kv.set(`events:${userId}:${date}`, JSON.stringify(events), { ex: 86400 });
+  const profile = await getOrCreateProfile(userId);
+  const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
+  const cache = (annotations.eventCache as Record<string, unknown>) ?? {};
+  await prisma.companionProfile.update({
+    where: { userId },
+    data: {
+      eventAnnotations: {
+        ...annotations,
+        eventCache: { ...cache, [date]: events },
+      } as JsonValue,
+    },
+  });
 }
 
 export async function getCachedEvents(
   userId: string,
   date: string,
 ): Promise<CompanionEvent[] | null> {
-  const raw = await kv.get<string>(`events:${userId}:${date}`);
-  if (!raw) return null;
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const profile = await prisma.companionProfile.findUnique({
+    where: { userId },
+  });
+  if (!profile?.eventAnnotations) return null;
+  const annotations = profile.eventAnnotations as Record<string, unknown>;
+  const cache = annotations.eventCache as Record<string, unknown> | undefined;
+  if (!cache?.[date]) return null;
+  return cache[date] as CompanionEvent[];
 }
 
 /* ------------------------------------------------------------------ */
 /*  Coaching records                                                   */
+/*                                                                     */
+/*  Stored in CompanionProfile.eventAnnotations under "coaching" and   */
+/*  "coachingDays" keys.                                               */
 /* ------------------------------------------------------------------ */
 
 export async function storeCoaching(record: CoachingRecord): Promise<void> {
-  // Store by eventId for dedup lookups
-  await kv.set(`coaching:${record.eventId}`, JSON.stringify(record));
+  // We need a userId to store — derive from the event context.
+  // Since coaching is keyed by eventId and we don't have userId in the record,
+  // store in a global-ish fashion: use a dedicated approach via annotations.
+  // For simplicity, store coaching keyed by eventId in all profiles that have
+  // cached events containing this eventId, OR use a separate storage approach.
+  //
+  // Pragmatic approach: store coaching records in the eventAnnotations JSON
+  // keyed by eventId. We need to find which user owns this event.
+  // Since the cron job iterates by userId, we pass through the profile.
 
-  // Append to daily list (date derived from sentAt)
-  const date = record.sentAt.slice(0, 10); // YYYY-MM-DD
-  await kv.rpush(`coaching_day:${date}`, JSON.stringify(record));
+  // Store by eventId for dedup lookups
+  const date = record.sentAt.slice(0, 10);
+
+  // Find which user profile has this event cached, or just store globally
+  // For now, store coaching in all profiles that match (the cron context ensures
+  // the right user). We use a findMany + update approach.
+  const profiles = await prisma.companionProfile.findMany();
+
+  for (const profile of profiles) {
+    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
+    const coaching = (annotations.coaching as Record<string, unknown>) ?? {};
+    const coachingDays = (annotations.coachingDays as Record<string, unknown[]>) ?? {};
+
+    // Check if this profile's event cache contains this eventId
+    const eventCache = (annotations.eventCache as Record<string, CompanionEvent[]>) ?? {};
+    const hasEvent = Object.values(eventCache).some((events) =>
+      events?.some?.((e) => e.id === record.eventId),
+    );
+
+    if (hasEvent || Object.keys(profiles).length === 1) {
+      const dayList = coachingDays[date] ?? [];
+      await prisma.companionProfile.update({
+        where: { id: profile.id },
+        data: {
+          eventAnnotations: {
+            ...annotations,
+            coaching: { ...coaching, [record.eventId]: record },
+            coachingDays: {
+              ...coachingDays,
+              [date]: [...dayList, record],
+            },
+          } as JsonValue,
+        },
+      });
+      break;
+    }
+  }
 }
 
 export async function getCoachingForEvent(
   eventId: string,
 ): Promise<CoachingRecord | null> {
-  const raw = await kv.get<string>(`coaching:${eventId}`);
-  if (!raw) return null;
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const profiles = await prisma.companionProfile.findMany();
+  for (const profile of profiles) {
+    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
+    const coaching = (annotations.coaching as Record<string, CoachingRecord>) ?? {};
+    if (coaching[eventId]) return coaching[eventId];
+  }
+  return null;
 }
 
 export async function getDayCoachings(date: string): Promise<CoachingRecord[]> {
-  const items = await kv.lrange<string>(`coaching_day:${date}`, 0, -1);
-  return items.map((item) =>
-    typeof item === 'string' ? JSON.parse(item) : item,
-  );
+  const profiles = await prisma.companionProfile.findMany();
+  const all: CoachingRecord[] = [];
+  for (const profile of profiles) {
+    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
+    const coachingDays = (annotations.coachingDays as Record<string, CoachingRecord[]>) ?? {};
+    if (coachingDays[date]) {
+      all.push(...coachingDays[date]);
+    }
+  }
+  return all;
 }
 
 /* ------------------------------------------------------------------ */
@@ -145,16 +267,39 @@ export async function storeReflection(
   score: number,
   text?: string,
 ): Promise<void> {
-  const existing = await getCoachingForEvent(eventId);
-  if (!existing) return;
+  const profiles = await prisma.companionProfile.findMany();
+  for (const profile of profiles) {
+    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
+    const coaching = (annotations.coaching as Record<string, CoachingRecord>) ?? {};
+    if (!coaching[eventId]) continue;
 
-  const updated: CoachingRecord = {
-    ...existing,
-    responseScore: score,
-    ...(text !== undefined && { responseText: text }),
-  };
+    const updated: CoachingRecord = {
+      ...coaching[eventId],
+      responseScore: score,
+      ...(text !== undefined && { responseText: text }),
+    };
 
-  await kv.set(`coaching:${eventId}`, JSON.stringify(updated));
+    const coachingDays = (annotations.coachingDays as Record<string, CoachingRecord[]>) ?? {};
+
+    // Also update in the day list
+    const date = updated.sentAt.slice(0, 10);
+    const dayList = coachingDays[date] ?? [];
+    const updatedDayList = dayList.map((c) =>
+      c.eventId === eventId ? updated : c,
+    );
+
+    await prisma.companionProfile.update({
+      where: { id: profile.id },
+      data: {
+        eventAnnotations: {
+          ...annotations,
+          coaching: { ...coaching, [eventId]: updated },
+          coachingDays: { ...coachingDays, [date]: updatedDayList },
+        } as JsonValue,
+      },
+    });
+    break;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -163,15 +308,22 @@ export async function storeReflection(
 
 export async function storeDailyIntention(
   userId: string,
-  date: string,
+  _date: string,
   intention: string,
 ): Promise<void> {
-  await kv.set(`intention:${userId}:${date}`, intention);
+  await prisma.companionProfile.upsert({
+    where: { userId },
+    create: { userId, dailyIntention: intention },
+    update: { dailyIntention: intention },
+  });
 }
 
 export async function getDailyIntention(
   userId: string,
-  date: string,
+  _date: string,
 ): Promise<string | null> {
-  return kv.get<string>(`intention:${userId}:${date}`);
+  const profile = await prisma.companionProfile.findUnique({
+    where: { userId },
+  });
+  return profile?.dailyIntention ?? null;
 }

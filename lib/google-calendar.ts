@@ -16,7 +16,7 @@ export interface CalendarEvent {
 
 /**
  * Build an authenticated OAuth2 client for a given user.
- * Auto-refreshes tokens when expired and persists new tokens back to KV.
+ * Auto-refreshes tokens when expired and persists new tokens back to Postgres.
  * If refresh fails, marks the user as needing reconnect.
  */
 export async function getCalendarClient(userId: string) {

@@ -18,32 +18,50 @@ export async function GET() {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  if (await needsReconnect(userId)) {
-    return Response.json({ error: 'needs_reconnect' }, { status: 403 });
+  try {
+    if (await needsReconnect(userId)) {
+      return Response.json({ error: 'needs_reconnect' }, { status: 403 });
+    }
+  } catch (err) {
+    console.error('[events] needsReconnect check failed:', err);
+    // Continue anyway — assume not needing reconnect
   }
 
-  const events = await getTodayEvents(userId);
+  try {
+    const events = await getTodayEvents(userId);
 
-  const enrichedEvents = await Promise.all(
-    events.map(async (event) => {
-      const scoringEvent = {
-        summary: event.title,
-        attendees: event.attendees,
-        isRecurring: event.isRecurring,
-      };
+    const enrichedEvents = await Promise.all(
+      events.map(async (event) => {
+        const scoringEvent = {
+          summary: event.title,
+          attendees: event.attendees,
+          isRecurring: event.isRecurring,
+        };
 
-      const autoScore = scoreEvent(scoringEvent);
-      const pillar = selectPillar(scoringEvent);
-      const coaching = await getCoachingForEvent(event.id);
+        const autoScore = scoreEvent(scoringEvent);
+        const pillar = selectPillar(scoringEvent);
+        let coaching = null;
+        try {
+          coaching = await getCoachingForEvent(event.id);
+        } catch {
+          // coaching lookup failed — skip coaching data
+        }
 
-      return {
-        ...event,
-        autoScore,
-        pillar,
-        coaching,
-      };
-    }),
-  );
+        return {
+          ...event,
+          autoScore,
+          pillar,
+          coaching,
+        };
+      }),
+    );
 
-  return Response.json({ events: enrichedEvents });
+    return Response.json({ events: enrichedEvents });
+  } catch (err) {
+    console.error('[events] Calendar fetch failed:', err);
+    return Response.json(
+      { error: 'calendar_fetch_failed', detail: String(err) },
+      { status: 500 }
+    );
+  }
 }
