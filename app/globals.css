@@ -1,26 +1,126 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf8f5;
+  --foreground: #2d2a26;
+  --muted: #8a8478;
+  --sage: #7a8a6e;
+  --sage-light: #e8ede4;
+  --amber: #c4a266;
+  --amber-light: #f5edd8;
+  --warm-gray: #d4cfc8;
+  --warm-gray-light: #eae7e2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: #1a1816;
+    --foreground: #e8e4df;
+    --muted: #9a9488;
+    --sage: #8fa080;
+    --sage-light: #2a3026;
+    --amber: #d4b276;
+    --amber-light: #2a2418;
+    --warm-gray: #3a3632;
+    --warm-gray-light: #2a2826;
+  }
+}
+
+:root.dark {
+  --background: #1a1816;
+  --foreground: #e8e4df;
+  --muted: #9a9488;
+  --sage: #8fa080;
+  --sage-light: #2a3026;
+  --amber: #d4b276;
+  --amber-light: #2a2418;
+  --warm-gray: #3a3632;
+  --warm-gray-light: #2a2826;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-muted: var(--muted);
+  --color-sage: var(--sage);
+  --color-sage-light: var(--sage-light);
+  --color-amber: var(--amber);
+  --color-amber-light: var(--amber-light);
+  --color-warm-gray: var(--warm-gray);
+  --color-warm-gray-light: var(--warm-gray-light);
+  --font-sans: var(--font-source-serif);
+  --font-body: var(--font-source-sans);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), Georgia, serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Breathing circle animation */
+@keyframes breathe-in {
+  0% { transform: scale(0.6); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@keyframes breathe-out {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(0.6); opacity: 0.4; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slow-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out forwards;
+}
+
+.animate-slow-gradient {
+  background-size: 400% 400%;
+  animation: slow-gradient 30s ease infinite;
+}
+
+/* Meditation text reveal */
+@keyframes text-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--warm-gray);
+  border-radius: 2px;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Mobile improvements */
+@media (max-width: 640px) {
+  .max-w-2xl {
+    max-width: 100%;
+  }
 }
