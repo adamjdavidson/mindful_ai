@@ -177,6 +177,21 @@ export default function CompanionPage() {
     );
   }
 
+  // Handle stress score change
+  function handleStressChange(eventId: string, score: number) {
+    setEvents((prev) =>
+      prev.map((ev) =>
+        ev.id === eventId ? { ...ev, autoScore: score } : ev
+      )
+    );
+    // Persist to backend (fire and forget)
+    fetch("/api/companion/annotate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId, stress: score }),
+    }).catch(() => {});
+  }
+
   // Find the split point between past and future events
   const nowIndex = events.findIndex((ev) => !isPastEvent(ev));
   const showNowLine = nowIndex > 0 || (nowIndex === -1 && events.length > 0);
@@ -233,6 +248,7 @@ export default function CompanionPage() {
                 stressScore={event.autoScore}
                 isPast={past}
                 coaching={event.coaching}
+                onStressChange={(score) => handleStressChange(event.id, score)}
               />
             </div>
           );

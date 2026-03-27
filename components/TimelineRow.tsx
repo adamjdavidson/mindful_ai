@@ -12,6 +12,7 @@ interface TimelineRowProps {
     pillar: string;
     responseScore?: number;
   } | null;
+  onStressChange?: (score: number) => void;
 }
 
 export default function TimelineRow({
@@ -20,6 +21,7 @@ export default function TimelineRow({
   stressScore,
   isPast,
   coaching,
+  onStressChange,
 }: TimelineRowProps) {
   return (
     <div className={`flex flex-col gap-0.5 py-2 ${isPast ? "opacity-50" : ""}`}>
@@ -28,7 +30,12 @@ export default function TimelineRow({
           {time}
         </span>
         <span className="text-sm truncate flex-1">{title}</span>
-        <StressIndicator score={stressScore} size={6} />
+        <StressIndicator
+          score={stressScore}
+          size={6}
+          interactive={!isPast}
+          onChange={onStressChange}
+        />
       </div>
       {coaching && (
         <div className="flex items-start gap-2 ml-15 pl-0.5">
