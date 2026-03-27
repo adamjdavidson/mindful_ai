@@ -54,6 +54,7 @@ export default function Home() {
   const [overlayDismissed, setOverlayDismissed] = useState<number>(0);
   const [gratitudeShown, setGratitudeShown] = useState(false);
   const [showValuesAction, setShowValuesAction] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
 
   // --- Tour state (Tasks 4-7) ---
   const [inspectTourId, setInspectTourId] = useState<string | null>(null);
@@ -123,6 +124,21 @@ export default function Home() {
     setSession((prev) => ({ ...prev, intention }));
     setPostMeditation(false);
     setPhase("conversation");
+
+    // Create a Postgres chat session (non-blocking)
+    try {
+      const res = await fetch("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intention }),
+      });
+      if (res.ok) {
+        const { id } = await res.json();
+        setChatSessionId(id);
+      }
+    } catch {
+      // Continue without persistence if session creation fails
+    }
   };
 
   const handleMeditationComplete = () => {
@@ -167,6 +183,7 @@ export default function Home() {
           })),
           intention: session.intention,
           promptModifiers,
+          chatSessionId,
         }),
       });
 
@@ -273,7 +290,7 @@ export default function Home() {
       setShowValuesAction(true);
     }, 13000);
 
-    // Save session
+    // Save session (localStorage)
     const finalTelemetry = finalizeTelemetry(telemetry, session.startedAt);
     const finalSession: SessionData = {
       ...session,
@@ -282,6 +299,17 @@ export default function Home() {
       telemetry: finalTelemetry,
     };
     saveSessionSummary(finalSession);
+
+    // Generate ACIP summary in Postgres (non-blocking)
+    if (chatSessionId) {
+      fetch("/api/chat/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatSessionId }),
+      }).catch(() => {
+        // Non-blocking: don't fail the UI if summarization fails
+      });
+    }
   };
 
 
@@ -298,6 +326,7 @@ export default function Home() {
     setGratitudeShown(false);
     setShowValuesAction(false);
     setError(null);
+    setChatSessionId(null);
     exchangeCountRef.current = 0;
   };
 
@@ -313,7 +342,21 @@ export default function Home() {
     } else {
       setSession((prev) => ({ ...prev, postReport: data as SelfReportData }));
     }
-  }, [session.phase]);
+
+    // Persist presence dot score to Postgres if we have a chat session
+    if (chatSessionId && typeof data.awareness === "number") {
+      fetch("/api/chat/self-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatSessionId,
+          score: data.awareness,
+        }),
+      }).catch(() => {
+        // Non-blocking
+      });
+    }
+  }, [session.phase, chatSessionId]);
 
   // --- Task 4: Inspect mode (Option-click) ---
   useEffect(() => {

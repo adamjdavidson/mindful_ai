@@ -18,13 +18,53 @@ You do NOT need to mention mindfulness, meditation, or breathing explicitly. Jus
 If a topic feels particularly emotional or heavy, end your response with the exact marker [PAUSE_SUGGESTED] on its own line. This signals the interface to offer a meditation break. Only use this for genuinely significant moments, not routine exchanges.`;
 }
 
+interface SessionSummaryRecord {
+  intention: string | null;
+  summary: string | null;
+  pillarScores: unknown;
+  startedAt: Date;
+}
+
+export function buildCrossSessionContext(
+  summaries: SessionSummaryRecord[]
+): string {
+  if (!summaries || summaries.length === 0) return "";
+
+  const formatted = summaries
+    .map((s, i) => {
+      const date = new Date(s.startedAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      const intention = s.intention || "No stated intention";
+      const scores = s.pillarScores as Record<string, number> | null;
+      const activePillars = scores
+        ? Object.entries(scores)
+            .filter(([, v]) => v >= 5)
+            .map(([k]) => k)
+            .join(", ")
+        : "none scored";
+
+      return `Session ${i + 1} (${date}): Intention: "${intention}" | Active pillars: ${activePillars}\n${s.summary || "No summary available."}`;
+    })
+    .join("\n\n");
+
+  return `CROSS-SESSION CONTEXT — The user's recent sessions (most recent first). Use this to notice patterns, reference previous themes when relevant, and provide continuity. Do not explicitly announce that you remember past sessions — just let the awareness inform your responses naturally.
+
+${formatted}`;
+}
+
 export function getEnhancedChatSystemPrompt(
   intention: string,
-  promptModifiers: string
+  promptModifiers: string,
+  summaries?: SessionSummaryRecord[]
 ): string {
   const base = getChatSystemPrompt(intention);
-  if (!promptModifiers) return base;
-  return `${base}\n\n${promptModifiers}`;
+  const crossSession = summaries
+    ? buildCrossSessionContext(summaries)
+    : "";
+  const parts = [base, crossSession, promptModifiers].filter(Boolean);
+  return parts.join("\n\n");
 }
 
 export function getMeditationPrompt(
