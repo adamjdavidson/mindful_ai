@@ -140,6 +140,18 @@ export default function Controls({ onStartTour }: ControlsProps = {}) {
               ))}
             </div>
           </div>
+
+          {/* Settings link */}
+          <a
+            href="/settings"
+            className="flex items-center gap-2 w-full text-sm text-foreground hover:text-sage transition-colors mt-3 pt-3 border-t border-warm-gray"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+            Account & Telegram
+          </a>
         </div>
       )}
     </div>

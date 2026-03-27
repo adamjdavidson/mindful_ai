@@ -45,6 +45,7 @@ export default function CompanionPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
   const nowLineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -74,6 +75,12 @@ export default function CompanionPage() {
     }
 
     fetchEvents();
+
+    // Check Telegram status
+    fetch("/api/telegram/status")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (data) setTelegramConnected(data.connected); })
+      .catch(() => {});
   }, [status]);
 
   // Auto-scroll to "now" line
@@ -178,6 +185,24 @@ export default function CompanionPage() {
     <div className="flex-1 flex flex-col items-center px-4 pt-6 pb-20">
       <PillarTint tint="neutral" />
       <div className="max-w-[640px] w-full space-y-0">
+        {telegramConnected === false && (
+          <a
+            href="/settings"
+            className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg text-sm transition-opacity hover:opacity-80"
+            style={{
+              backgroundColor: "rgba(122, 138, 110, 0.08)",
+              color: "var(--muted)",
+            }}
+          >
+            <span className="text-lg">💬</span>
+            <span>
+              Connect Telegram to get gentle coaching prompts before your meetings
+            </span>
+            <span className="ml-auto text-xs" style={{ color: "var(--sage)" }}>
+              Set up →
+            </span>
+          </a>
+        )}
         {events.map((event, i) => {
           const past = isPastEvent(event);
           const insertNowBefore =

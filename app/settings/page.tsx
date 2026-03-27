@@ -62,9 +62,17 @@ export default function SettingsPage() {
     <div className="flex-1 flex flex-col items-center px-4 pt-10 pb-20">
       <div className="max-w-[480px] w-full space-y-10">
         {/* Header */}
-        <h1 className="font-sans text-2xl font-semibold tracking-tight">
-          Settings
-        </h1>
+        <div className="flex items-center gap-3">
+          <a
+            href="/"
+            className="text-muted hover:text-foreground transition-colors"
+          >
+            ← Back
+          </a>
+          <h1 className="font-sans text-2xl font-semibold tracking-tight">
+            Settings
+          </h1>
+        </div>
 
         {/* Profile section */}
         <section className="space-y-4">
@@ -109,7 +117,7 @@ export default function SettingsPage() {
                 calendar events and log reflections by replying with a score.
               </p>
               <a
-                href={`https://t.me/y_mingyur_bot?start=${userId}`}
+                href={`https://t.me/ai_mindful_bot?start=${userId}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => setPolling(true)}
