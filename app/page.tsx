@@ -57,6 +57,7 @@ export default function Home() {
   const [showValuesAction, setShowValuesAction] = useState(false);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [showNewSessionPrompt, setShowNewSessionPrompt] = useState(false);
 
   // --- Tour state (Tasks 4-7) ---
   const [inspectTourId, setInspectTourId] = useState<string | null>(null);
@@ -365,7 +366,30 @@ export default function Home() {
     setShowValuesAction(false);
     setError(null);
     setChatSessionId(null);
+    setShowNewSessionPrompt(false);
     exchangeCountRef.current = 0;
+  };
+
+  const handleStartNewSession = () => {
+    setShowNewSessionPrompt(true);
+  };
+
+  const handleSkipReflection = async () => {
+    setShowNewSessionPrompt(false);
+    if (chatSessionId) {
+      // Auto-summarize in background
+      fetch("/api/chat/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatSessionId }),
+      }).catch(() => {});
+    }
+    handleNewSession();
+  };
+
+  const handleReflectThenNew = () => {
+    setShowNewSessionPrompt(false);
+    handleEndSession();
   };
 
   const handleOverlayDismiss = () => {
@@ -590,7 +614,7 @@ export default function Home() {
   // Main conversation
   return (
     <>
-      <SessionSidebar currentSessionId={chatSessionId} onNewSession={handleNewSession} />
+      <SessionSidebar currentSessionId={chatSessionId} onNewSession={handleStartNewSession} />
       <PillarTint tint={tourTintOverride || activeTint} />
       <SelfReport onChange={handleAmbientReport} />
       <MindfulOverlay
@@ -612,10 +636,57 @@ export default function Home() {
         onError={handleRetry}
         pacingMultiplier={pacingMultiplier}
       />
+      {showNewSessionPrompt && (
+        <NewSessionPrompt
+          onReflect={handleReflectThenNew}
+          onSkip={handleSkipReflection}
+        />
+      )}
       <FeatureTour mode="inspect" isActive={!!inspectTourId} inspectTarget={inspectTourId || undefined} onClose={() => setInspectTourId(null)} />
       <FeatureTour mode="tour" isActive={showTour} onClose={handleTourClose} onComplete={handleTourComplete} onTintOverride={setTourTintOverride} />
       {showOptionHint && <OptionHint onDismiss={() => setShowOptionHint(false)} />}
     </>
+  );
+}
+
+function NewSessionPrompt({
+  onReflect,
+  onSkip,
+}: {
+  onReflect: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onSkip();
+      }}
+    >
+      <div className="bg-background rounded-2xl p-8 max-w-sm mx-4 text-center space-y-6 border border-warm-gray">
+        <p
+          className="text-lg leading-relaxed"
+          style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
+        >
+          Would you like to close out that session with a reflection?
+        </p>
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={onReflect}
+            className="px-6 py-2.5 rounded-full text-sm border border-warm-gray text-muted hover:border-sage hover:text-sage transition-colors"
+          >
+            Yes, reflect first
+          </button>
+          <button
+            onClick={onSkip}
+            autoFocus
+            className="px-6 py-2.5 rounded-full text-sm bg-sage/10 border border-sage text-sage hover:bg-sage/20 transition-colors"
+          >
+            No, start fresh
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
