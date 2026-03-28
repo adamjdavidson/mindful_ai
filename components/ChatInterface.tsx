@@ -106,6 +106,8 @@ export default function ChatInterface({
         data-tour-id="ai-response"
         className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-4"
       >
+        {/* Spacer pushes messages to bottom like a standard chat */}
+        <div className="flex-1" />
         {messages.map((msg, i) => (
           <MessageBubble key={i} role={msg.role}>
             {msg.role === "assistant" ? (
