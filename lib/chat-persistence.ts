@@ -72,3 +72,20 @@ export async function getChatSessionMessages(chatSessionId: string) {
     orderBy: { createdAt: "asc" },
   });
 }
+
+export async function getActiveSession(userId: string) {
+  return prisma.chatSession.findFirst({
+    where: { userId, endedAt: null },
+    orderBy: { startedAt: "desc" },
+    include: {
+      messages: { orderBy: { createdAt: "asc" } },
+    },
+  });
+}
+
+export async function autoCloseSession(chatSessionId: string, userId: string) {
+  return prisma.chatSession.update({
+    where: { id: chatSessionId, userId },
+    data: { endedAt: new Date() },
+  });
+}
