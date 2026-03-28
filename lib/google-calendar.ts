@@ -65,26 +65,47 @@ export async function getCalendarClient(userId: string) {
 
 /**
  * Fetch today's events from the user's primary Google Calendar.
+ *
+ * Uses the client's IANA timezone (e.g. "America/New_York") to compute
+ * "today" correctly even when the server runs in UTC (Vercel).
+ * See: https://developers.google.com/workspace/calendar/api/v3/reference/events/list
  */
 export async function getTodayEvents(
   userId: string,
+  userTimeZone?: string,
 ): Promise<CalendarEvent[]> {
   const auth = await getCalendarClient(userId);
   const calendar = google.calendar({ version: 'v3', auth });
 
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
+  const tz = userTimeZone || 'UTC';
+
+  // Compute "today" in the user's timezone using Intl.DateTimeFormat
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const todayStr = formatter.format(new Date()); // YYYY-MM-DD
+
+  // Google Calendar API wants RFC3339 timestamps.
+  // We pass the local date boundaries and let the timeZone param handle interpretation.
+  const timeMin = `${todayStr}T00:00:00`;
+  const timeMax = `${todayStr}T23:59:59`;
+
+  console.log('[calendar] tz:', tz, 'today:', todayStr, 'range:', timeMin, '-', timeMax);
 
   const response = await calendar.events.list({
     calendarId: 'primary',
-    timeMin: startOfDay.toISOString(),
-    timeMax: endOfDay.toISOString(),
+    timeMin: new Date(`${timeMin}`).toISOString(),
+    timeMax: new Date(`${timeMax}`).toISOString(),
+    timeZone: tz,
     singleEvents: true,
     orderBy: 'startTime',
   });
 
   const items = response.data.items ?? [];
+  console.log('[calendar] got', items.length, 'events');
 
   return items.map((event) => ({
     id: event.id ?? '',

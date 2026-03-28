@@ -7,9 +7,14 @@ import {
 import { getTodayEvents } from '@/lib/google-calendar';
 import { scoreEvent, selectPillar } from '@/lib/scoring';
 
-export async function GET() {
+export async function GET(req: Request) {
   const t0 = Date.now();
   console.log('[events] GET started');
+
+  // Client sends its IANA timezone so we compute "today" correctly
+  const url = new URL(req.url);
+  const userTimeZone = url.searchParams.get('tz') || undefined;
+  console.log('[events] userTimeZone:', userTimeZone);
 
   const session = await getServerSession(authOptions);
   console.log('[events] getServerSession took', Date.now() - t0, 'ms');
@@ -40,7 +45,7 @@ export async function GET() {
 
   try {
     const t2 = Date.now();
-    const events = await getTodayEvents(userId);
+    const events = await getTodayEvents(userId, userTimeZone);
     console.log('[events] getTodayEvents took', Date.now() - t2, 'ms, got', events.length, 'events');
 
     const t3 = Date.now();

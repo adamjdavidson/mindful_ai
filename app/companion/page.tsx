@@ -71,7 +71,8 @@ export default function CompanionPage() {
       const t0 = performance.now();
       console.log("[companion] fetchEvents started");
       try {
-        const res = await fetch("/api/calendar/events");
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const res = await fetch(`/api/calendar/events?tz=${encodeURIComponent(tz)}`);
         console.log("[companion] calendar API responded in", Math.round(performance.now() - t0), "ms, status:", res.status);
         if (res.status === 403) {
           const data = await res.json();
