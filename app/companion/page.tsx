@@ -25,6 +25,11 @@ interface CalendarEvent {
 
 function formatTime(iso: string): string {
   try {
+    // All-day events come as "YYYY-MM-DD" (no T, no time component).
+    // Don't try to format a time for these.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      return "All day";
+    }
     const d = new Date(iso);
     return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   } catch {
@@ -34,6 +39,11 @@ function formatTime(iso: string): string {
 
 function isPastEvent(event: CalendarEvent): boolean {
   try {
+    // All-day events ("YYYY-MM-DD"): treat as current (not past) if end date is today or later
+    if (/^\d{4}-\d{2}-\d{2}$/.test(event.end)) {
+      const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local tz
+      return event.end < today;
+    }
     return new Date(event.end) < new Date();
   } catch {
     return false;
