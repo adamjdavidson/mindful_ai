@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getEnhancedChatSystemPrompt } from "@/lib/prompts";
 import { getRecentSummaries, saveMessages } from "@/lib/chat-persistence";
+import { prisma } from "@/lib/db";
 
 const client = new Anthropic();
 
@@ -10,16 +11,32 @@ export async function POST(req: Request) {
   const { messages, intention, promptModifiers, chatSessionId } =
     await req.json();
 
-  // Try to get user session for cross-session context (non-blocking if unauthenticated)
+  // Get authenticated user (non-blocking if unauthenticated)
+  let userId: string | undefined;
   let summaries: Awaited<ReturnType<typeof getRecentSummaries>> = [];
   try {
     const session = await getServerSession(authOptions);
-    const userId = (session?.user as { id?: string })?.id;
+    userId = (session?.user as { id?: string })?.id;
     if (userId) {
       summaries = await getRecentSummaries(userId);
     }
   } catch {
     // Continue without cross-session context if auth fails
+  }
+
+  // Pre-verify session ownership before streaming (so we don't save to wrong session)
+  let verifiedSessionId: string | null = null;
+  if (chatSessionId && userId) {
+    try {
+      const chatSession = await prisma.chatSession.findFirst({
+        where: { id: chatSessionId, userId },
+      });
+      if (chatSession) {
+        verifiedSessionId = chatSession.id;
+      }
+    } catch {
+      // Continue without persistence
+    }
   }
 
   const stream = await client.messages.stream({
@@ -58,17 +75,15 @@ export async function POST(req: Request) {
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
 
-      // After streaming completes, persist messages if we have a chatSessionId
-      if (chatSessionId) {
+      // After streaming completes, persist messages only if ownership verified
+      if (verifiedSessionId) {
         try {
-          // Find the last user message from the request
           const lastUserMessage = messages[messages.length - 1];
-          await saveMessages(chatSessionId, [
+          await saveMessages(verifiedSessionId, [
             { role: lastUserMessage.role, content: lastUserMessage.content },
             { role: "assistant", content: fullAssistantText },
           ]);
         } catch {
-          // Non-blocking: don't fail the response if persistence fails
           console.error("Failed to persist chat messages");
         }
       }
