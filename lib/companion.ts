@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db';
+import { getRecentSummaries } from '@/lib/chat-persistence';
+import type { Pillar } from '@/lib/interventions';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type JsonValue = any; // Prisma Json fields accept any serialisable value
@@ -327,4 +329,139 @@ export async function getDailyIntention(
     where: { userId },
   });
   return profile?.dailyIntention ?? null;
+}
+
+/* ------------------------------------------------------------------ */
+/*  User history for personalized coaching                             */
+/* ------------------------------------------------------------------ */
+
+/** System keys in eventAnnotations that are NOT user stress annotations. */
+const SYSTEM_ANNOTATION_KEYS = new Set([
+  'coaching',
+  'coachingDays',
+  'eventCache',
+  'needsReconnect',
+]);
+
+export interface UserAnnotation {
+  stress: number;
+  title: string;
+  note?: string;
+}
+
+/**
+ * Returns all user stress-dot annotations from eventAnnotations,
+ * filtering out system keys (coaching, coachingDays, eventCache, needsReconnect).
+ */
+export async function getUserAnnotationHistory(
+  userId: string,
+): Promise<Record<string, UserAnnotation>> {
+  const profile = await prisma.companionProfile.findUnique({
+    where: { userId },
+  });
+  if (!profile?.eventAnnotations) return {};
+
+  const all = profile.eventAnnotations as Record<string, unknown>;
+  const result: Record<string, UserAnnotation> = {};
+
+  for (const [key, value] of Object.entries(all)) {
+    if (SYSTEM_ANNOTATION_KEYS.has(key)) continue;
+    if (
+      value &&
+      typeof value === 'object' &&
+      'stress' in (value as Record<string, unknown>)
+    ) {
+      result[key] = value as UserAnnotation;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Computes the user's average ACIP pillar profile from their recent chat sessions.
+ * Returns average pillarScores across sessions. Defaults to 5 per pillar for new users.
+ */
+export async function getACIPProfile(
+  userId: string,
+): Promise<Record<Pillar, number>> {
+  const defaults: Record<Pillar, number> = {
+    awareness: 5,
+    connection: 5,
+    insight: 5,
+    purpose: 5,
+  };
+
+  const sessions = await getRecentSummaries(userId, 10);
+  if (sessions.length === 0) return defaults;
+
+  const totals = { awareness: 0, connection: 0, insight: 0, purpose: 0 };
+  let counted = 0;
+
+  for (const s of sessions) {
+    if (!s.pillarScores) continue;
+    const scores = s.pillarScores as Record<string, number>;
+    if (typeof scores.awareness !== 'number') continue;
+    totals.awareness += scores.awareness;
+    totals.connection += scores.connection;
+    totals.insight += scores.insight;
+    totals.purpose += scores.purpose;
+    counted++;
+  }
+
+  if (counted === 0) return defaults;
+
+  return {
+    awareness: Math.round((totals.awareness / counted) * 10) / 10,
+    connection: Math.round((totals.connection / counted) * 10) / 10,
+    insight: Math.round((totals.insight / counted) * 10) / 10,
+    purpose: Math.round((totals.purpose / counted) * 10) / 10,
+  };
+}
+
+/**
+ * Produces a natural language summary of the user's annotation patterns for Claude context.
+ */
+export function summarizeAnnotationPatterns(
+  annotations: Record<string, UserAnnotation>,
+): string {
+  const entries = Object.values(annotations);
+  if (entries.length === 0) {
+    return 'No past event ratings available.';
+  }
+
+  const total = entries.reduce((sum, a) => sum + a.stress, 0);
+  const avg = Math.round((total / entries.length) * 10) / 10;
+
+  const high = entries.filter((a) => a.stress >= 4).map((a) => a.title);
+  const low = entries.filter((a) => a.stress <= 2).map((a) => a.title);
+
+  const parts = [
+    `User has rated ${entries.length} events. Average stress: ${avg}/5.`,
+  ];
+
+  if (high.length > 0) {
+    const uniqueHigh = [...new Set(high)].slice(0, 3);
+    parts.push(`High stress events: ${uniqueHigh.join(', ')}.`);
+  }
+  if (low.length > 0) {
+    const uniqueLow = [...new Set(low)].slice(0, 3);
+    parts.push(`Low stress events: ${uniqueLow.join(', ')}.`);
+  }
+
+  return parts.join(' ');
+}
+
+/**
+ * Find past annotations for events with similar titles.
+ */
+export function findSimilarAnnotations(
+  annotations: Record<string, UserAnnotation>,
+  eventTitle: string,
+): UserAnnotation[] {
+  const normalized = eventTitle.toLowerCase().trim();
+  return Object.values(annotations).filter((a) => {
+    const t = a.title.toLowerCase().trim();
+    return t === normalized || t.includes(normalized) || normalized.includes(t);
+  });
 }

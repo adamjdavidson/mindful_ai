@@ -3,9 +3,12 @@ import { authOptions } from '@/lib/auth';
 import {
   needsReconnect,
   getCoachingForEvent,
+  getUserAnnotationHistory,
+  getACIPProfile,
+  summarizeAnnotationPatterns,
 } from '@/lib/companion';
 import { getTodayEvents } from '@/lib/google-calendar';
-import { scoreEvent, selectPillar } from '@/lib/scoring';
+import { scoreEventPersonalized } from '@/lib/scoring';
 
 export async function GET(req: Request) {
   const t0 = Date.now();
@@ -49,16 +52,26 @@ export async function GET(req: Request) {
     console.log('[events] getTodayEvents took', Date.now() - t2, 'ms, got', events.length, 'events');
 
     const t3 = Date.now();
+    const annotations = await getUserAnnotationHistory(userId);
+    const acipProfile = await getACIPProfile(userId);
+    const annotationSummary = summarizeAnnotationPatterns(annotations);
+
     const enrichedEvents = await Promise.all(
       events.map(async (event) => {
         const scoringEvent = {
+          id: event.id,
           summary: event.title,
           attendees: event.attendees,
           isRecurring: event.isRecurring,
+          start: event.start,
         };
 
-        const autoScore = scoreEvent(scoringEvent);
-        const pillar = selectPillar(scoringEvent);
+        const result = await scoreEventPersonalized(
+          scoringEvent,
+          annotations,
+          acipProfile,
+          annotationSummary,
+        );
         let coaching = null;
         try {
           coaching = await getCoachingForEvent(event.id);
@@ -68,8 +81,9 @@ export async function GET(req: Request) {
 
         return {
           ...event,
-          autoScore,
-          pillar,
+          autoScore: result.score,
+          pillar: result.pillar,
+          scoringSource: result.source,
           coaching,
         };
       }),

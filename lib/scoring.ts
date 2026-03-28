@@ -1,96 +1,149 @@
-import type { Pillar } from "./interventions";
+import Anthropic from '@anthropic-ai/sdk';
+import type { Pillar } from './interventions';
+import type { UserAnnotation } from './companion';
+
+const anthropic = new Anthropic();
 
 export interface ScoringEvent {
+  id: string;
   summary: string;
   attendees: string[];
   isRecurring: boolean;
+  start: string;
 }
 
-const STRESS_KEYWORDS = [
-  "review",
-  "performance",
-  "board",
-  "all-hands",
-  "allhands",
-  "presentation",
-  "demo",
-  "interview",
-  "evaluation",
-  "assessment",
-];
-
-const INSIGHT_KEYWORDS = ["brainstorm", "creative", "ideation"];
-
-/**
- * Score a calendar event on a 1-5 stress scale.
- *
- * Base score: 2
- * +1 if attendees > 5
- * +1 if summary contains a stress keyword
- * -1 if recurring AND attendees <= 2 (familiar 1:1)
- * Clamped to [1, 5].
- */
-export function scoreEvent(event: ScoringEvent): number {
-  let score = 2;
-
-  if (event.attendees.length > 5) score += 1;
-
-  const lower = event.summary.toLowerCase();
-  if (STRESS_KEYWORDS.some((kw) => lower.includes(kw))) score += 1;
-
-  if (event.isRecurring && event.attendees.length <= 2) score -= 1;
-
-  return Math.max(1, Math.min(5, score));
-}
-
-/**
- * Select which ACIP pillar to use for coaching based on event characteristics.
- *
- * - Performance reviews, 1:1s, recurring meetings with <= 2 people -> 'connection'
- * - Attendees > 5 -> 'awareness'
- * - Brainstorm/creative/ideation in summary -> 'insight'
- * - Default -> 'awareness'
- */
-export function selectPillar(event: ScoringEvent): Pillar {
-  const lower = event.summary.toLowerCase();
-
-  // Performance reviews or recurring small meetings -> connection
-  if (STRESS_KEYWORDS.slice(0, 2).some((kw) => lower.includes(kw))) {
-    return "connection";
-  }
-  if (event.isRecurring && event.attendees.length <= 2) {
-    return "connection";
-  }
-
-  // Large group -> awareness
-  if (event.attendees.length > 5) {
-    return "awareness";
-  }
-
-  // Creative/brainstorm -> insight
-  if (INSIGHT_KEYWORDS.some((kw) => lower.includes(kw))) {
-    return "insight";
-  }
-
-  return "awareness";
+export interface ScoringResult {
+  score: number; // 1-5
+  pillar: Pillar;
+  source: 'user-exact' | 'user-similar' | 'claude-estimate' | 'default';
 }
 
 /** Static fallback prompts when Claude API is unavailable, 2 per pillar. */
 export const FALLBACK_PROMPTS: Record<Pillar, string[]> = {
   awareness: [
-    "Take three slow breaths before you begin.",
-    "Notice your feet on the floor. Notice your hands. You are here.",
+    'Take three slow breaths before you begin.',
+    'Notice your feet on the floor. Notice your hands. You are here.',
   ],
   connection: [
-    "What does the other person need from this conversation?",
-    "How might they be feeling right now? What would help them?",
+    'What does the other person need from this conversation?',
+    'How might they be feeling right now? What would help them?',
   ],
   insight: [
-    "What assumptions are you bringing to this? Are they true?",
-    "What would you notice if you watched this situation from the outside?",
+    'What assumptions are you bringing to this? Are they true?',
+    'What would you notice if you watched this situation from the outside?',
   ],
   purpose: [
-    "What matters most to you in this conversation?",
-    "How does this connect to what you care about?",
+    'What matters most to you in this conversation?',
+    'How does this connect to what you care about?',
   ],
 };
+
+/**
+ * Three-tier personalized scoring cascade:
+ *   Tier 1 — Exact match (user rated this event ID before)
+ *   Tier 2 — Title similarity (user rated events with same/similar title)
+ *   Tier 3 — Claude estimation (with user context)
+ *   Fallback — score 3 / awareness / default
+ */
+export async function scoreEventPersonalized(
+  event: ScoringEvent,
+  annotations: Record<string, UserAnnotation>,
+  acipProfile: Record<Pillar, number>,
+  annotationSummary: string,
+): Promise<ScoringResult> {
+  // Tier 1: Exact match by event ID
+  if (annotations[event.id]) {
+    return {
+      score: annotations[event.id].stress,
+      pillar: selectPillarFromProfile(acipProfile, event),
+      source: 'user-exact',
+    };
+  }
+
+  // Tier 2: Title similarity
+  const normalized = event.summary.toLowerCase().trim();
+  const similar = Object.values(annotations).filter((a) => {
+    const t = a.title.toLowerCase().trim();
+    return t === normalized || t.includes(normalized) || normalized.includes(t);
+  });
+
+  if (similar.length > 0) {
+    const avgStress =
+      Math.round(
+        (similar.reduce((sum, a) => sum + a.stress, 0) / similar.length) * 10,
+      ) / 10;
+    return {
+      score: Math.round(avgStress),
+      pillar: selectPillarFromProfile(acipProfile, event),
+      source: 'user-similar',
+    };
+  }
+
+  // Tier 3: Claude estimation
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6-20250627',
+      max_tokens: 200,
+      system:
+        'You are a stress estimation assistant. Given a calendar event and the user\'s history, estimate how stressful this event is likely to be on a 1-5 scale and recommend one of the four well-being pillars (awareness, connection, insight, purpose). Return ONLY valid JSON: {"score": N, "pillar": "...", "reasoning": "..."}',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            `Event: "${event.summary}"`,
+            `Attendees: ${event.attendees.length}`,
+            `Recurring: ${event.isRecurring}`,
+            `Start: ${event.start}`,
+            ``,
+            `User's annotation history: ${annotationSummary}`,
+            `User's well-being profile: awareness=${acipProfile.awareness}, connection=${acipProfile.connection}, insight=${acipProfile.insight}, purpose=${acipProfile.purpose}`,
+            ``,
+            `Estimate stress (1-5) and recommend the most relevant pillar.`,
+          ].join('\n'),
+        },
+      ],
+    });
+
+    const block = response.content[0];
+    if (block.type === 'text') {
+      const parsed = JSON.parse(block.text);
+      const score = Math.max(1, Math.min(5, Math.round(parsed.score)));
+      const pillar = validatePillar(parsed.pillar);
+      return { score, pillar, source: 'claude-estimate' };
+    }
+  } catch (error) {
+    console.error('Claude scoring estimation failed:', error);
+  }
+
+  // Fallback
+  return { score: 3, pillar: 'awareness', source: 'default' };
+}
+
+/**
+ * Select pillar based on user's ACIP profile — pick the weakest pillar,
+ * breaking ties with event context.
+ */
+function selectPillarFromProfile(
+  acipProfile: Record<Pillar, number>,
+  event: ScoringEvent,
+): Pillar {
+  const pillars: Pillar[] = ['awareness', 'connection', 'insight', 'purpose'];
+  const sorted = pillars.sort((a, b) => acipProfile[a] - acipProfile[b]);
+
+  // If clear winner (lowest score), use it
+  if (acipProfile[sorted[0]] < acipProfile[sorted[1]]) {
+    return sorted[0];
+  }
+
+  // Tie-break with event context
+  if (event.attendees.length <= 2) return 'connection';
+  if (event.attendees.length > 5) return 'awareness';
+
+  return sorted[0];
+}
+
+function validatePillar(value: string): Pillar {
+  const valid: Pillar[] = ['awareness', 'connection', 'insight', 'purpose'];
+  if (valid.includes(value as Pillar)) return value as Pillar;
+  return 'awareness';
+}

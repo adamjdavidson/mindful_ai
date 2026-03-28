@@ -5,9 +5,14 @@ import {
   storeCoaching,
   getDailyIntention,
   needsReconnect,
+  getUserAnnotationHistory,
+  getACIPProfile,
+  summarizeAnnotationPatterns,
+  findSimilarAnnotations,
 } from '@/lib/companion';
+import { getRecentSummaries } from '@/lib/chat-persistence';
 import { getTodayEvents } from '@/lib/google-calendar';
-import { scoreEvent, selectPillar } from '@/lib/scoring';
+import { scoreEventPersonalized } from '@/lib/scoring';
 import { generateCoachingPrompt } from '@/lib/coaching';
 import { sendCoachingPrompt, sendTelegramMessage } from '@/lib/telegram';
 
@@ -16,6 +21,57 @@ function escapeHtml(str: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Compute calendar density context for coaching tone adjustment.
+ * E.g. "Meeting 3 of 7 today. Back-to-back — no gap before. 5.5 hours of meetings total."
+ */
+function computeCalendarDensity(
+  events: { start: string; end: string }[],
+  currentIndex: number,
+): string {
+  const total = events.length;
+  const position = currentIndex + 1;
+
+  // Total meeting hours
+  const totalMinutes = events.reduce((sum, e) => {
+    const start = new Date(e.start).getTime();
+    const end = new Date(e.end).getTime();
+    return sum + (end - start) / 60_000;
+  }, 0);
+  const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
+
+  // Back-to-back detection (gap < 15 min)
+  const current = events[currentIndex];
+  const currentStart = new Date(current.start).getTime();
+  const currentEnd = new Date(current.end).getTime();
+
+  let backToBackBefore = false;
+  let backToBackAfter = false;
+
+  if (currentIndex > 0) {
+    const prevEnd = new Date(events[currentIndex - 1].end).getTime();
+    backToBackBefore = (currentStart - prevEnd) / 60_000 < 15;
+  }
+  if (currentIndex < events.length - 1) {
+    const nextStart = new Date(events[currentIndex + 1].start).getTime();
+    backToBackAfter = (nextStart - currentEnd) / 60_000 < 15;
+  }
+
+  const parts = [`Meeting ${position} of ${total} today.`];
+
+  if (backToBackBefore && backToBackAfter) {
+    parts.push('Back-to-back — no gap before or after.');
+  } else if (backToBackBefore) {
+    parts.push('Back-to-back — no gap before.');
+  } else if (backToBackAfter) {
+    parts.push('Back-to-back — no gap after.');
+  }
+
+  parts.push(`${totalHours} hours of meetings total.`);
+
+  return parts.join(' ');
 }
 
 export async function GET(request: NextRequest) {
@@ -46,9 +102,16 @@ export async function GET(request: NextRequest) {
 
       const events = await getTodayEvents(userId);
       const today = now.toISOString().slice(0, 10);
-      const intention = await getDailyIntention(userId, today);
 
-      for (const event of events) {
+      // Per-user context (fetched once before event loop)
+      const annotations = await getUserAnnotationHistory(userId);
+      const acipProfile = await getACIPProfile(userId);
+      const summaries = await getRecentSummaries(userId, 3);
+      const intention = await getDailyIntention(userId, today);
+      const annotationSummary = summarizeAnnotationPatterns(annotations);
+
+      for (let i = 0; i < events.length; i++) {
+        const event = events[i];
         const eventStart = new Date(event.start);
         const eventEnd = new Date(event.end);
         const minsUntilStart = (eventStart.getTime() - now.getTime()) / 60_000;
@@ -57,24 +120,42 @@ export async function GET(request: NextRequest) {
         // Pre-event coaching: events starting within the next 30 minutes
         if (minsUntilStart > 0 && minsUntilStart <= 30) {
           const scoringEvent = {
+            id: event.id,
             summary: event.title,
             attendees: event.attendees,
             isRecurring: event.isRecurring,
+            start: event.start,
           };
 
-          const score = scoreEvent(scoringEvent);
-          if (score < 3) continue;
+          const result = await scoreEventPersonalized(
+            scoringEvent,
+            annotations,
+            acipProfile,
+            annotationSummary,
+          );
+
+          // Lowered threshold: only skip truly low-stress events (score 1)
+          if (result.score < 2) continue;
 
           // Dedup: skip if already coached for this event
           const existing = await getCoachingForEvent(event.id);
           if (existing) continue;
 
-          const pillar = selectPillar(scoringEvent);
+          const similar = findSimilarAnnotations(annotations, event.title);
+          const calendarDensity = computeCalendarDensity(events, i);
+
           const content = await generateCoachingPrompt(
             event.title,
-            pillar,
+            result.pillar,
             event.attendees,
-            intention ?? undefined,
+            {
+              dailyIntention: intention ?? undefined,
+              recentSummaries: summaries,
+              pastRatingsForSimilar: similar,
+              acipProfile,
+              stressEstimate: result.score,
+              calendarDensity,
+            },
           );
 
           try {
@@ -83,7 +164,7 @@ export async function GET(request: NextRequest) {
             await storeCoaching({
               id: `${event.id}-${Date.now()}`,
               eventId: event.id,
-              pillar,
+              pillar: result.pillar,
               content,
               sentAt: now.toISOString(),
               channel: 'telegram',
