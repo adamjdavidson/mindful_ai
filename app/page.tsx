@@ -68,6 +68,39 @@ export default function Home() {
   const exchangeCountRef = useRef(0);
   const lastRetryContentRef = useRef<string>("");
 
+  // Smooth streaming: buffer tokens and drain at a steady rate
+  const streamBufferRef = useRef(""); // accumulated text not yet shown
+  const displayedRef = useRef("");    // text already rendered
+  const rafRef = useRef<number>(0);
+
+  const startStreamDrain = useCallback(() => {
+    const drain = () => {
+      if (streamBufferRef.current.length > displayedRef.current.length) {
+        // Drain ~2-4 characters per frame (~120-240 chars/sec at 60fps)
+        // Speeds up when buffer is large to prevent falling behind
+        const behind = streamBufferRef.current.length - displayedRef.current.length;
+        const charsPerFrame = behind > 200 ? 12 : behind > 80 ? 6 : 3;
+        const nextLen = Math.min(
+          displayedRef.current.length + charsPerFrame,
+          streamBufferRef.current.length
+        );
+        displayedRef.current = streamBufferRef.current.slice(0, nextLen);
+        setStreamingText(displayedRef.current);
+      }
+      rafRef.current = requestAnimationFrame(drain);
+    };
+    rafRef.current = requestAnimationFrame(drain);
+  }, []);
+
+  const stopStreamDrain = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    // Flush any remaining buffered text immediately
+    if (streamBufferRef.current) {
+      setStreamingText(streamBufferRef.current);
+      displayedRef.current = streamBufferRef.current;
+    }
+  }, []);
+
   useEffect(() => {
     async function checkActiveSession() {
       try {
@@ -210,6 +243,9 @@ export default function Home() {
 
     setIsStreaming(true);
     setStreamingText("");
+    streamBufferRef.current = "";
+    displayedRef.current = "";
+    startStreamDrain();
 
     try {
       const res = await fetch("/api/chat", {
@@ -249,7 +285,8 @@ export default function Home() {
               try {
                 const { text } = JSON.parse(data);
                 fullText += text;
-                setStreamingText(fullText);
+                // Buffer only — RAF loop handles rendering
+                streamBufferRef.current = fullText;
               } catch {
                 // skip malformed chunks
               }
@@ -258,6 +295,7 @@ export default function Home() {
         }
       }
 
+      stopStreamDrain();
       const assistantMessage: Message = {
         role: "assistant",
         content: fullText,
@@ -274,6 +312,7 @@ export default function Home() {
       // Reset overlay dismissed counter so new overlays can show
       setOverlayDismissed((prev) => prev);
     } catch {
+      stopStreamDrain();
       setIsStreaming(false);
       setStreamingText("");
       setError("Something interrupted our connection. Would you like to try again?");
