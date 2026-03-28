@@ -65,6 +65,7 @@ export default function CompanionPage() {
   }
 
   useEffect(() => {
+    console.log("[companion] useEffect fired, status:", status, "session:", !!session);
     if (status !== "authenticated") return;
 
     async function fetchEvents() {
