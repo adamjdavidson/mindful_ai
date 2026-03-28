@@ -26,6 +26,6 @@ export const config = {
      * - _next/* (Next.js internals)
      * - favicon.ico
      */
-    "/((?!login|api/auth|api/telegram/webhook|_next|favicon\\.ico).*)",
+    "/((?!login|api/auth|api/telegram/webhook|api/cron|_next|favicon\\.ico).*)",
   ],
 };
