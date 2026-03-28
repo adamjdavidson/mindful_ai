@@ -56,6 +56,7 @@ export default function Home() {
   const [gratitudeShown, setGratitudeShown] = useState(false);
   const [showValuesAction, setShowValuesAction] = useState(false);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
 
   // --- Tour state (Tasks 4-7) ---
   const [inspectTourId, setInspectTourId] = useState<string | null>(null);
@@ -65,6 +66,42 @@ export default function Home() {
 
   const exchangeCountRef = useRef(0);
   const lastRetryContentRef = useRef<string>("");
+
+  useEffect(() => {
+    async function checkActiveSession() {
+      try {
+        const res = await fetch("/api/chat/sessions/active");
+        if (!res.ok) {
+          setIsLoadingSession(false);
+          return;
+        }
+        const data = await res.json();
+        if (data.session) {
+          setChatSessionId(data.session.id);
+          setSession((prev) => ({
+            ...prev,
+            phase: "conversation" as SessionPhase,
+            intention: data.session.intention || "",
+          }));
+          setMessages(
+            data.session.messages.map((m: { role: string; content: string; timestamp: number }) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              timestamp: m.timestamp,
+            }))
+          );
+          exchangeCountRef.current = Math.floor(
+            data.session.messages.filter((m: { role: string }) => m.role === "assistant").length
+          );
+        }
+      } catch {
+        // Continue with fresh session if fetch fails
+      } finally {
+        setIsLoadingSession(false);
+      }
+    }
+    checkActiveSession();
+  }, []);
 
   const setPhase = useCallback((phase: SessionPhase) => {
     setSession((prev) => ({ ...prev, phase }));
@@ -437,6 +474,14 @@ export default function Home() {
 
   // Ambient self-report dots — visible everywhere, always
   const showAmbientDots = true;
+
+  if (isLoadingSession) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <BreathingCircle size={80} showLabel={false} />
+      </div>
+    );
+  }
 
   // Meditation overlay (can appear during arrival or conversation)
   if (meditationText || isMeditationLoading) {
