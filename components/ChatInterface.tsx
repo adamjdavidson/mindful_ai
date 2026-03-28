@@ -13,6 +13,7 @@ interface ChatInterfaceProps {
   onSendMessage: (content: string) => void;
   onMeditationBreak: () => void;
   onEndSession: () => void;
+  onNewSession?: () => void;
   streamingText: string;
   isStreaming: boolean;
   isWaiting: boolean;
@@ -28,6 +29,7 @@ export default function ChatInterface({
   onSendMessage,
   onMeditationBreak,
   onEndSession,
+  onNewSession,
   streamingText,
   isStreaming,
   isWaiting,
@@ -40,7 +42,28 @@ export default function ChatInterface({
   const [revealedMessages, setRevealedMessages] = useState<Set<number>>(
     () => new Set(messages.map((_, i) => i))
   );
+
+  // When new messages arrive (e.g. from streaming), mark them as revealed immediately
+  // so they render through Markdown, not PacedTextRenderer again
+  useEffect(() => {
+    setRevealedMessages((prev) => {
+      if (messages.length <= prev.size) return prev;
+      const next = new Set(prev);
+      for (let i = 0; i < messages.length; i++) {
+        next.add(i);
+      }
+      return next;
+    });
+  }, [messages.length]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Re-focus the input after streaming/waiting ends
+  useEffect(() => {
+    if (!isStreaming && !isWaiting) {
+      inputRef.current?.focus();
+    }
+  }, [isStreaming, isWaiting]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -69,12 +92,22 @@ export default function ChatInterface({
             {intention}
           </p>
         </div>
-        <button
-          onClick={onEndSession}
-          className="text-sm text-muted hover:text-sage transition-colors"
-        >
-          End session
-        </button>
+        <div className="flex items-center gap-4">
+          {onNewSession && (
+            <button
+              onClick={onNewSession}
+              className="text-sm text-sage hover:text-sage/80 transition-colors"
+            >
+              Start a new session
+            </button>
+          )}
+          <button
+            onClick={onEndSession}
+            className="text-sm text-muted hover:text-sage transition-colors"
+          >
+            End session
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -114,11 +147,9 @@ export default function ChatInterface({
                 <span className="text-muted text-sm">Taking a breath...</span>
               </div>
             ) : (
-              <PacedTextRenderer
-                text={streamingText.replace(/\[PAUSE_SUGGESTED\]/g, "").trim()}
-                wordsPerSecond={adjustedWordsPerSecond}
-                isStreaming={true}
-              />
+              <Markdown>
+                {streamingText.replace(/\[PAUSE_SUGGESTED\]/g, "").trim()}
+              </Markdown>
             )}
           </MessageBubble>
         )}
@@ -143,6 +174,7 @@ export default function ChatInterface({
       <div className="px-6 py-4 pb-10 border-t border-warm-gray-light">
         <div className="flex gap-3 items-end">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Share your thoughts..."

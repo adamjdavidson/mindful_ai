@@ -628,6 +628,7 @@ export default function Home() {
         onSendMessage={sendMessage}
         onMeditationBreak={handleMeditationBreak}
         onEndSession={handleEndSession}
+        onNewSession={handleStartNewSession}
         streamingText={streamingText}
         isStreaming={isStreaming}
         isWaiting={isWaiting}
