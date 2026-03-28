@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { sendTelegramMessage } from "@/lib/telegram";
+import { sendTelegramMessage, sendTestCoachingMessage } from "@/lib/telegram";
 import { getDayCoachings, storeReflection } from "@/lib/companion";
 
 export async function POST(request: Request) {
@@ -41,10 +41,8 @@ export async function POST(request: Request) {
         data: { telegramChatId: chatId },
       });
 
-      await sendTelegramMessage(
-        chatId,
-        `Connected! Hi ${user.name ?? "there"} \u2014 you\u2019ll receive mindful coaching prompts here before your calendar events.\n\nReply with a number 1\u20135 after each event to log how it went.`,
-      );
+      // Send a real coaching prompt for the next event, or a warm fallback
+      await sendTestCoachingMessage(userId, chatId);
 
       return Response.json({ ok: true });
     }

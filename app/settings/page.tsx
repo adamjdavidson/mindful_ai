@@ -7,6 +7,7 @@ export default function SettingsPage() {
   const { data: session, status } = useSession();
   const [telegramConnected, setTelegramConnected] = useState(false);
   const [polling, setPolling] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   const userId = (session?.user as { id?: string } | undefined)?.id;
 
@@ -101,14 +102,46 @@ export default function SettingsPage() {
           </h2>
 
           {telegramConnected ? (
-            <div className="flex items-center gap-2">
-              <span
-                className="inline-block w-2 h-2 rounded-full"
-                style={{ backgroundColor: "var(--sage)" }}
-              />
-              <span className="text-sm" style={{ color: "var(--sage)" }}>
-                Telegram connected
-              </span>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ backgroundColor: "var(--sage)" }}
+                />
+                <span className="text-sm" style={{ color: "var(--sage)" }}>
+                  Telegram connected
+                </span>
+              </div>
+              <button
+                onClick={async () => {
+                  setTestStatus('sending');
+                  try {
+                    const res = await fetch('/api/telegram/test', { method: 'POST' });
+                    if (res.ok) {
+                      setTestStatus('sent');
+                      setTimeout(() => setTestStatus('idle'), 4000);
+                    } else {
+                      setTestStatus('error');
+                      setTimeout(() => setTestStatus('idle'), 4000);
+                    }
+                  } catch {
+                    setTestStatus('error');
+                    setTimeout(() => setTestStatus('idle'), 4000);
+                  }
+                }}
+                disabled={testStatus === 'sending'}
+                className="text-sm px-4 py-1.5 rounded-lg transition-colors border"
+                style={{
+                  borderColor: 'var(--border)',
+                  color: testStatus === 'sent' ? 'var(--sage)' : 'var(--foreground)',
+                  opacity: testStatus === 'sending' ? 0.6 : 1,
+                }}
+              >
+                {testStatus === 'idle' && 'Send test message'}
+                {testStatus === 'sending' && 'Sending...'}
+                {testStatus === 'sent' && 'Sent! Check Telegram.'}
+                {testStatus === 'error' && 'Failed — try again'}
+              </button>
             </div>
           ) : (
             <div className="space-y-3">
