@@ -106,6 +106,15 @@ export default function CompanionPage() {
     }
   }, [events]);
 
+  // Load existing annotations
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetch("/api/companion/annotations")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (data?.annotations) setAnnotations(data.annotations); })
+      .catch(() => {});
+  }, [status]);
+
   // Compute pillar counts for ACIPBar
   const pillarCounts = events.reduce<Record<string, number>>((acc, ev) => {
     if (ev.coaching?.pillar) {
@@ -193,14 +202,6 @@ export default function CompanionPage() {
     );
   }
 
-  // Load existing annotations
-  useEffect(() => {
-    if (status !== "authenticated") return;
-    fetch("/api/companion/annotations")
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => { if (data?.annotations) setAnnotations(data.annotations); })
-      .catch(() => {});
-  }, [status]);
 
   // Find the split point between past and future events
   const nowIndex = events.findIndex((ev) => !isPastEvent(ev));
