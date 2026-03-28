@@ -40,11 +40,17 @@ function isPastEvent(event: CalendarEvent): boolean {
   }
 }
 
+let renderCount = 0;
+
 export default function CompanionPage() {
+  renderCount++;
   const { data: session, status } = useSession();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Log every single render with all state
+  console.log(`[companion] RENDER #${renderCount} | status=${status} session=${!!session} loading=${loading} error=${error} events=${events.length}`);
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
   const [annotations, setAnnotations] = useState<Record<string, { stress?: number; note?: string }>>({});
   const nowLineRef = useRef<HTMLDivElement>(null);
