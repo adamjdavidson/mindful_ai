@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import { getChatSessionMessages, endChatSession } from "@/lib/chat-persistence";
 import { prisma } from "@/lib/db";
 
