@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const modes = [
@@ -20,7 +19,7 @@ export default function NavToggle() {
             : pathname.startsWith(mode.href);
 
         return (
-          <Link
+          <a
             key={mode.href}
             href={mode.href}
             className={
@@ -30,7 +29,7 @@ export default function NavToggle() {
             }
           >
             {mode.label}
-          </Link>
+          </a>
         );
       })}
     </nav>

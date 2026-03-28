@@ -88,17 +88,30 @@ export async function getTodayEvents(
   });
   const todayStr = formatter.format(new Date()); // YYYY-MM-DD
 
-  // Google Calendar API wants RFC3339 timestamps.
-  // We pass the local date boundaries and let the timeZone param handle interpretation.
-  const timeMin = `${todayStr}T00:00:00`;
-  const timeMax = `${todayStr}T23:59:59`;
+  // Compute timezone offset string (e.g. "-04:00" for America/New_York in EDT)
+  // so we can build proper RFC3339 timestamps for the Google Calendar API
+  const nowInTz = new Date();
+  const offsetParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    timeZoneName: 'longOffset',
+  }).formatToParts(nowInTz);
+  const offsetPart = offsetParts.find(p => p.type === 'timeZoneName');
+  // offsetPart.value is like "GMT-04:00" or "GMT+05:30" or "GMT" for UTC
+  let offsetStr = '+00:00';
+  if (offsetPart?.value && offsetPart.value !== 'GMT') {
+    const match = offsetPart.value.match(/GMT([+-]\d{2}:\d{2})/);
+    if (match) offsetStr = match[1];
+  }
 
-  console.log('[calendar] tz:', tz, 'today:', todayStr, 'range:', timeMin, '-', timeMax);
+  const timeMin = `${todayStr}T00:00:00${offsetStr}`;
+  const timeMax = `${todayStr}T23:59:59${offsetStr}`;
+
+  console.log('[calendar] tz:', tz, 'offset:', offsetStr, 'today:', todayStr, 'range:', timeMin, '-', timeMax);
 
   const response = await calendar.events.list({
     calendarId: 'primary',
-    timeMin: new Date(`${timeMin}`).toISOString(),
-    timeMax: new Date(`${timeMax}`).toISOString(),
+    timeMin,
+    timeMax,
     timeZone: tz,
     singleEvents: true,
     orderBy: 'startTime',

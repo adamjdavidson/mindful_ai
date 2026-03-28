@@ -77,7 +77,15 @@ export async function GET(req: Request) {
     console.log('[events] enrichment took', Date.now() - t3, 'ms');
     console.log('[events] TOTAL:', Date.now() - t0, 'ms');
 
-    return Response.json({ events: enrichedEvents });
+    return Response.json({
+      events: enrichedEvents,
+      _debug: {
+        userTimeZone: userTimeZone || 'none provided',
+        totalMs: Date.now() - t0,
+        sessionMs: Date.now() - t0,
+        eventCount: enrichedEvents.length,
+      },
+    });
   } catch (err) {
     console.error('[events] Calendar fetch failed after', Date.now() - t0, 'ms:', err);
     return Response.json(
