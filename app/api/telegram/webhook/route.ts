@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       }
 
       const today = new Date().toISOString().slice(0, 10);
-      const coachings = await getDayCoachings(today);
+      const coachings = await getDayCoachings(today, user.id);
 
       const unreflected = coachings
         .filter((c) => !c.responseScore)

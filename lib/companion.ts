@@ -245,8 +245,9 @@ export async function getCoachingForEvent(
   return null;
 }
 
-export async function getDayCoachings(date: string): Promise<CoachingRecord[]> {
-  const profiles = await prisma.companionProfile.findMany();
+export async function getDayCoachings(date: string, userId?: string): Promise<CoachingRecord[]> {
+  const where = userId ? { userId } : {};
+  const profiles = await prisma.companionProfile.findMany({ where });
   const all: CoachingRecord[] = [];
   for (const profile of profiles) {
     const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
