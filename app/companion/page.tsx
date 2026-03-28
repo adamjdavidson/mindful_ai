@@ -68,22 +68,30 @@ export default function CompanionPage() {
     if (status !== "authenticated") return;
 
     async function fetchEvents() {
+      const t0 = performance.now();
+      console.log("[companion] fetchEvents started");
       try {
         const res = await fetch("/api/calendar/events");
+        console.log("[companion] calendar API responded in", Math.round(performance.now() - t0), "ms, status:", res.status);
         if (res.status === 403) {
           const data = await res.json();
           if (data.error === "needs_reconnect") {
+            console.log("[companion] needs_reconnect");
             setError("needs_reconnect");
             return;
           }
         }
         if (!res.ok) {
+          const text = await res.text();
+          console.error("[companion] calendar API error:", res.status, text);
           setError("Failed to load events");
           return;
         }
         const data = await res.json();
+        console.log("[companion] got", data.events?.length ?? 0, "events in", Math.round(performance.now() - t0), "ms");
         setEvents(data.events ?? []);
-      } catch {
+      } catch (err) {
+        console.error("[companion] fetchEvents exception:", err);
         setError("Failed to load events");
       } finally {
         setLoading(false);
@@ -93,10 +101,14 @@ export default function CompanionPage() {
     fetchEvents();
 
     // Check Telegram status
+    const tTel = performance.now();
     fetch("/api/telegram/status")
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => {
+        console.log("[companion] telegram status responded in", Math.round(performance.now() - tTel), "ms");
+        return res.ok ? res.json() : null;
+      })
       .then((data) => { if (data) setTelegramConnected(data.connected); })
-      .catch(() => {});
+      .catch((err) => console.error("[companion] telegram status error:", err));
   }, [status]);
 
   // Auto-scroll to "now" line
@@ -109,10 +121,20 @@ export default function CompanionPage() {
   // Load existing annotations
   useEffect(() => {
     if (status !== "authenticated") return;
+    const t0 = performance.now();
+    console.log("[companion] fetching annotations");
     fetch("/api/companion/annotations")
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => { if (data?.annotations) setAnnotations(data.annotations); })
-      .catch(() => {});
+      .then((res) => {
+        console.log("[companion] annotations responded in", Math.round(performance.now() - t0), "ms, status:", res.status);
+        return res.ok ? res.json() : null;
+      })
+      .then((data) => {
+        if (data?.annotations) {
+          console.log("[companion] loaded", Object.keys(data.annotations).length, "annotations");
+          setAnnotations(data.annotations);
+        }
+      })
+      .catch((err) => console.error("[companion] annotations error:", err));
   }, [status]);
 
   // Compute pillar counts for ACIPBar
