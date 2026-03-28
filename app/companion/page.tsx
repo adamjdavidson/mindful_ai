@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import TimelineRow from "@/components/TimelineRow";
 import ACIPBar from "@/components/ACIPBar";
 import PillarTint from "@/components/PillarTint";
@@ -40,25 +40,18 @@ function isPastEvent(event: CalendarEvent): boolean {
   }
 }
 
-let renderCount = 0;
-
 export default function CompanionPage() {
-  renderCount++;
   const { data: session, status } = useSession();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Log every single render with all state
-  console.log(`[companion] RENDER #${renderCount} | status=${status} session=${!!session} loading=${loading} error=${error} events=${events.length}`);
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
   const [annotations, setAnnotations] = useState<Record<string, { stress?: number; note?: string }>>({});
   const nowLineRef = useRef<HTMLDivElement>(null);
 
-  // Save annotation to server
-  async function saveAnnotation(eventId: string, eventTitle: string, data: { stress?: number; note?: string }) {
-    const updated = { ...annotations, [eventId]: { ...annotations[eventId], ...data } };
-    setAnnotations(updated);
+  // Save annotation to server (memoized to prevent re-render cascades)
+  const saveAnnotation = useCallback(async (eventId: string, eventTitle: string, data: { stress?: number; note?: string }) => {
+    setAnnotations(prev => ({ ...prev, [eventId]: { ...prev[eventId], ...data } }));
     try {
       await fetch("/api/companion/annotate", {
         method: "POST",
@@ -68,7 +61,7 @@ export default function CompanionPage() {
     } catch {
       // silent fail, annotation is already in local state
     }
-  }
+  }, []);
 
   useEffect(() => {
     console.log("[companion] useEffect fired, status:", status, "session:", !!session);
@@ -150,13 +143,13 @@ export default function CompanionPage() {
       .catch((err) => console.error("[companion] annotations error:", err));
   }, [status]);
 
-  // Compute pillar counts for ACIPBar
-  const pillarCounts = events.reduce<Record<string, number>>((acc, ev) => {
+  // Compute pillar counts for ACIPBar (memoized to prevent new object on every render)
+  const pillarCounts = useMemo(() => events.reduce<Record<string, number>>((acc, ev) => {
     if (ev.coaching?.pillar) {
       acc[ev.coaching.pillar] = (acc[ev.coaching.pillar] ?? 0) + 1;
     }
     return acc;
-  }, {});
+  }, {}), [events]);
 
   // Unauthenticated users are redirected to /login by middleware.
   // Loading state (also covers brief "unauthenticated" before session resolves)
