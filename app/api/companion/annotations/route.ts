@@ -4,12 +4,13 @@ import { prisma } from "@/lib/db";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!userId) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const profile = await prisma.companionProfile.findUnique({
-    where: { userId: session.user.id },
+    where: { userId },
   });
 
   const annotations =

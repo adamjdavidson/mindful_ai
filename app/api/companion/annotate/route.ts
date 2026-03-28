@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  if (!(session?.user as { id?: string } | undefined)?.id) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "eventId required" }, { status: 400 });
   }
 
-  const userId = session.user.id;
+  const userId = (session!.user as { id: string }).id;
 
   const existing = await prisma.companionProfile.findUnique({
     where: { userId },
