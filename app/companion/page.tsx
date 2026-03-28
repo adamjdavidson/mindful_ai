@@ -86,7 +86,12 @@ export default function CompanionPage() {
         if (!res.ok) {
           const text = await res.text();
           console.error("[companion] calendar API error:", res.status, text);
-          setError("Failed to load events");
+          // Check for scope/auth errors — treat as needs_reconnect
+          if (text.includes("insufficient authentication scopes") || text.includes("invalid_grant")) {
+            setError("needs_reconnect");
+          } else {
+            setError("Failed to load events");
+          }
           return;
         }
         const data = await res.json();
