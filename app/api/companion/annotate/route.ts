@@ -8,21 +8,28 @@ export async function POST(req: Request) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { eventId, stress } = await req.json();
+  const { eventId, eventTitle, stress, note } = await req.json();
 
-  if (!eventId || typeof stress !== "number" || stress < 1 || stress > 5) {
-    return Response.json({ error: "invalid input" }, { status: 400 });
+  if (!eventId) {
+    return Response.json({ error: "eventId required" }, { status: 400 });
   }
 
-  // Upsert the annotation in the companion profile
   const userId = session.user.id;
 
   const existing = await prisma.companionProfile.findUnique({
     where: { userId },
   });
 
-  const annotations = (existing?.eventAnnotations as Record<string, { stress: number }>) ?? {};
-  annotations[eventId] = { stress };
+  const annotations =
+    (existing?.eventAnnotations as Record<string, { stress?: number; note?: string; title?: string }>) ?? {};
+
+  // Merge with existing annotation for this event
+  annotations[eventId] = {
+    ...annotations[eventId],
+    ...(typeof stress === "number" ? { stress } : {}),
+    ...(typeof note === "string" ? { note } : {}),
+    ...(typeof eventTitle === "string" ? { title: eventTitle } : {}),
+  };
 
   await prisma.companionProfile.upsert({
     where: { userId },

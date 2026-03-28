@@ -46,7 +46,23 @@ export default function CompanionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
+  const [annotations, setAnnotations] = useState<Record<string, { stress?: number; note?: string }>>({});
   const nowLineRef = useRef<HTMLDivElement>(null);
+
+  // Save annotation to server
+  async function saveAnnotation(eventId: string, eventTitle: string, data: { stress?: number; note?: string }) {
+    const updated = { ...annotations, [eventId]: { ...annotations[eventId], ...data } };
+    setAnnotations(updated);
+    try {
+      await fetch("/api/companion/annotate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, eventTitle, ...data }),
+      });
+    } catch {
+      // silent fail, annotation is already in local state
+    }
+  }
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -177,20 +193,14 @@ export default function CompanionPage() {
     );
   }
 
-  // Handle stress score change
-  function handleStressChange(eventId: string, score: number) {
-    setEvents((prev) =>
-      prev.map((ev) =>
-        ev.id === eventId ? { ...ev, autoScore: score } : ev
-      )
-    );
-    // Persist to backend (fire and forget)
-    fetch("/api/companion/annotate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId, stress: score }),
-    }).catch(() => {});
-  }
+  // Load existing annotations
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetch("/api/companion/annotations")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (data?.annotations) setAnnotations(data.annotations); })
+      .catch(() => {});
+  }, [status]);
 
   // Find the split point between past and future events
   const nowIndex = events.findIndex((ev) => !isPastEvent(ev));
@@ -245,10 +255,12 @@ export default function CompanionPage() {
               <TimelineRow
                 time={formatTime(event.start)}
                 title={event.title}
-                stressScore={event.autoScore}
+                stressScore={annotations[event.id]?.stress ?? event.autoScore}
                 isPast={past}
+                note={annotations[event.id]?.note}
                 coaching={event.coaching}
-                onStressChange={(score) => handleStressChange(event.id, score)}
+                onStressChange={(score) => saveAnnotation(event.id, event.title, { stress: score })}
+                onNoteChange={(note) => saveAnnotation(event.id, event.title, { note })}
               />
             </div>
           );
