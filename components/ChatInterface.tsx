@@ -92,22 +92,12 @@ export default function ChatInterface({
             {intention}
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          {onNewSession && (
-            <button
-              onClick={onNewSession}
-              className="text-sm text-sage hover:text-sage/80 transition-colors"
-            >
-              Start a new session
-            </button>
-          )}
-          <button
-            onClick={onEndSession}
-            className="text-sm text-muted hover:text-sage transition-colors"
-          >
-            End session
-          </button>
-        </div>
+        <button
+          onClick={onNewSession || onEndSession}
+          className="text-sm text-muted hover:text-sage transition-colors"
+        >
+          New session
+        </button>
       </div>
 
       {/* Messages */}
