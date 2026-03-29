@@ -1,11 +1,14 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getEnhancedChatSystemPrompt } from "@/lib/prompts";
 import { getRecentSummaries, saveMessages } from "@/lib/chat-persistence";
 import { prisma } from "@/lib/db";
-
-const client = new Anthropic();
+import {
+  assertTokenBudget,
+  getAnthropicClient,
+  recordTokenUsage,
+  BudgetExceededError,
+} from "@/lib/token-budget";
 
 export async function POST(req: Request) {
   const { messages, intention, promptModifiers, chatSessionId } =
@@ -24,6 +27,32 @@ export async function POST(req: Request) {
     // Continue without cross-session context if auth fails
   }
 
+  // Budget gate
+  if (userId) {
+    try {
+      await assertTokenBudget(userId);
+    } catch (err) {
+      if (err instanceof BudgetExceededError) {
+        return Response.json(
+          {
+            error: "budget_exceeded",
+            tokensUsed: err.tokensUsed,
+            tokenBudget: err.tokenBudget,
+          },
+          { status: 403 },
+        );
+      }
+      throw err;
+    }
+  }
+
+  // Get the appropriate client (server singleton or BYOK)
+  const {
+    client: anthropic,
+    model,
+    usingOwnKey,
+  } = await getAnthropicClient(userId ?? "", "claude-opus-4-6");
+
   // Pre-verify session ownership before streaming (so we don't save to wrong session)
   let verifiedSessionId: string | null = null;
   if (chatSessionId && userId) {
@@ -39,8 +68,8 @@ export async function POST(req: Request) {
     }
   }
 
-  const stream = await client.messages.stream({
-    model: "claude-opus-4-6",
+  const stream = await anthropic.messages.stream({
+    model,
     max_tokens: 512,
     system: getEnhancedChatSystemPrompt(
       intention,
@@ -74,6 +103,20 @@ export async function POST(req: Request) {
       }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
+
+      // Record token usage (server key only)
+      if (userId && !usingOwnKey) {
+        try {
+          const finalMessage = await stream.finalMessage();
+          await recordTokenUsage(
+            userId,
+            finalMessage.usage.input_tokens,
+            finalMessage.usage.output_tokens,
+          );
+        } catch {
+          console.error("Failed to record token usage");
+        }
+      }
 
       // After streaming completes, persist messages only if ownership verified
       if (verifiedSessionId) {

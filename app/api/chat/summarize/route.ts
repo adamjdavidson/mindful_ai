@@ -1,10 +1,13 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getChatSessionMessages, endChatSession } from "@/lib/chat-persistence";
 import { prisma } from "@/lib/db";
-
-const client = new Anthropic();
+import {
+  assertTokenBudget,
+  getAnthropicClient,
+  recordTokenUsage,
+  BudgetExceededError,
+} from "@/lib/token-budget";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -12,6 +15,19 @@ export async function POST(req: Request) {
 
   if (!userId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Budget gate
+  try {
+    await assertTokenBudget(userId);
+  } catch (err) {
+    if (err instanceof BudgetExceededError) {
+      return Response.json(
+        { error: "budget_exceeded", tokensUsed: err.tokensUsed, tokenBudget: err.tokenBudget },
+        { status: 403 },
+      );
+    }
+    throw err;
   }
 
   const { chatSessionId } = await req.json();
@@ -44,9 +60,15 @@ export async function POST(req: Request) {
     ? `The user's stated intention was: "${chatSession.intention}"`
     : "No explicit intention was stated.";
 
+  // Get the appropriate client
+  const { client, model: clientModel, usingOwnKey } = await getAnthropicClient(
+    userId,
+    "claude-sonnet-4-6-20250627",
+  );
+
   // Call Claude for ACIP-structured summary
   const response = await client.messages.create({
-    model: "claude-sonnet-4-6-20250627",
+    model: clientModel,
     max_tokens: 1024,
     messages: [
       {
@@ -93,6 +115,15 @@ Put the summary text first, then the PILLAR_SCORES line last.`,
       summary = fullResponse.replace(/\n*PILLAR_SCORES:\s*\{[^}]+\}/, "").trim();
     } catch {
       // Keep defaults if parsing fails
+    }
+  }
+
+  // Record token usage (server key only)
+  if (!usingOwnKey) {
+    try {
+      await recordTokenUsage(userId, response.usage.input_tokens, response.usage.output_tokens);
+    } catch {
+      console.error("Failed to record token usage");
     }
   }
 

@@ -12,6 +12,7 @@ import MindfulOverlay from "@/components/MindfulOverlay";
 import PillarTint from "@/components/PillarTint";
 import SessionSidebar from "@/components/SessionSidebar";
 import FeatureTour from "@/components/FeatureTour";
+import TokenBudgetBanner from "@/components/TokenBudgetBanner";
 import {
   SessionPhase,
   Message,
@@ -64,6 +65,15 @@ export default function Home() {
   const [showTour, setShowTour] = useState(false);
   const [showOptionHint, setShowOptionHint] = useState(false);
   const [tourTintOverride, setTourTintOverride] = useState<"blue" | "rose" | "violet" | "amber" | "neutral" | null>(null);
+
+  // --- Budget state ---
+  const [budgetStatus, setBudgetStatus] = useState<{
+    tokensUsed: number;
+    tokenBudget: number;
+    warningReached: boolean;
+    budgetExceeded: boolean;
+    hasOwnKey: boolean;
+  } | null>(null);
 
   const exchangeCountRef = useRef(0);
   const lastRetryContentRef = useRef<string>("");
@@ -135,6 +145,21 @@ export default function Home() {
       }
     }
     checkActiveSession();
+  }, []);
+
+  // Fetch budget status on mount
+  useEffect(() => {
+    fetch("/api/settings/usage")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setBudgetStatus(data); })
+      .catch(() => {});
+  }, []);
+
+  const refreshBudgetStatus = useCallback(() => {
+    fetch("/api/settings/usage")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setBudgetStatus(data); })
+      .catch(() => {});
   }, []);
 
   const setPhase = useCallback((phase: SessionPhase) => {
@@ -263,6 +288,26 @@ export default function Home() {
       });
 
       if (!res.ok) {
+        if (res.status === 403) {
+          try {
+            const errData = await res.json();
+            if (errData.error === "budget_exceeded") {
+              setBudgetStatus({
+                tokensUsed: errData.tokensUsed,
+                tokenBudget: errData.tokenBudget,
+                warningReached: true,
+                budgetExceeded: true,
+                hasOwnKey: false,
+              });
+              stopStreamDrain();
+              setIsStreaming(false);
+              setStreamingText("");
+              // Remove the user message we just added
+              setMessages((prev) => prev.slice(0, -1));
+              return;
+            }
+          } catch { /* fall through */ }
+        }
         throw new Error("Request failed");
       }
 
@@ -304,6 +349,7 @@ export default function Home() {
       setMessages((prev) => [...prev, assistantMessage]);
       setStreamingText("");
       setIsStreaming(false);
+      refreshBudgetStatus();
       exchangeCountRef.current += 1;
       setSession((prev) => ({
         ...prev,
@@ -661,6 +707,16 @@ export default function Home() {
         pillar={overlayPillar}
         onDismiss={handleOverlayDismiss}
       />
+      {budgetStatus && (
+        <TokenBudgetBanner
+          tokensUsed={budgetStatus.tokensUsed}
+          tokenBudget={budgetStatus.tokenBudget}
+          warningReached={budgetStatus.warningReached}
+          budgetExceeded={budgetStatus.budgetExceeded}
+          hasOwnKey={budgetStatus.hasOwnKey}
+          onKeySubmitted={refreshBudgetStatus}
+        />
+      )}
       <ChatInterface
         intention={session.intention}
         messages={messages}

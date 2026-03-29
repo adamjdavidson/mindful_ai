@@ -43,6 +43,10 @@ model User {
   image            String?
   role             String            @default("user")
   telegramChatId   String?
+  tokensUsed       Int               @default(0)
+  tokenBudget      Int               @default(50000)
+  anthropicApiKey  String?           @db.Text
+  preferredModel   String            @default("claude-sonnet-4-6-20250627")
   accounts         Account[]
   sessions         Session[]
   chatSessions     ChatSession[]

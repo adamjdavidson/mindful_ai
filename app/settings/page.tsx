@@ -9,6 +9,16 @@ export default function SettingsPage() {
   const [polling, setPolling] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
+  // Budget & API key state
+  const [tokensUsed, setTokensUsed] = useState(0);
+  const [tokenBudget, setTokenBudget] = useState(50000);
+  const [hasKey, setHasKey] = useState(false);
+  const [preferredModel, setPreferredModel] = useState('claude-sonnet-4-6-20250627');
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [modelInput, setModelInput] = useState('claude-sonnet-4-6-20250627');
+  const [keySaveStatus, setKeySaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
   const userId = (session?.user as { id?: string } | undefined)?.id;
 
   const checkTelegramStatus = useCallback(async () => {
@@ -24,10 +34,35 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const fetchUsageAndKey = useCallback(async () => {
+    try {
+      const [usageRes, keyRes] = await Promise.all([
+        fetch('/api/settings/usage'),
+        fetch('/api/settings/api-key'),
+      ]);
+      if (usageRes.ok) {
+        const data = await usageRes.json();
+        setTokensUsed(data.tokensUsed);
+        setTokenBudget(data.tokenBudget);
+      }
+      if (keyRes.ok) {
+        const data = await keyRes.json();
+        setHasKey(data.hasKey);
+        setPreferredModel(data.preferredModel);
+        setModelInput(data.preferredModel);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Initial check
   useEffect(() => {
-    if (status === "authenticated") checkTelegramStatus();
-  }, [status, checkTelegramStatus]);
+    if (status === "authenticated") {
+      checkTelegramStatus();
+      fetchUsageAndKey();
+    }
+  }, [status, checkTelegramStatus, fetchUsageAndKey]);
 
   // Poll every 3s while waiting for connection
   useEffect(() => {
@@ -35,6 +70,58 @@ export default function SettingsPage() {
     const interval = setInterval(checkTelegramStatus, 3000);
     return () => clearInterval(interval);
   }, [polling, checkTelegramStatus]);
+
+  async function handleSaveKey() {
+    setKeySaveStatus('saving');
+    try {
+      const res = await fetch('/api/settings/api-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKeyInput, preferredModel: modelInput }),
+      });
+      if (res.ok) {
+        setKeySaveStatus('saved');
+        setHasKey(true);
+        setPreferredModel(modelInput);
+        setApiKeyInput('');
+      } else {
+        setKeySaveStatus('error');
+      }
+    } catch {
+      setKeySaveStatus('error');
+    }
+    setTimeout(() => setKeySaveStatus('idle'), 4000);
+  }
+
+  async function handleRemoveKey() {
+    try {
+      const res = await fetch('/api/settings/api-key', { method: 'DELETE' });
+      if (res.ok) {
+        setHasKey(false);
+        setPreferredModel('claude-sonnet-4-6-20250627');
+        setModelInput('claude-sonnet-4-6-20250627');
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleModelChange(model: string) {
+    setModelInput(model);
+    if (hasKey) {
+      // Update model preference via PATCH-style update
+      try {
+        await fetch('/api/settings/api-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preferredModel: model }),
+        });
+        setPreferredModel(model);
+      } catch {
+        // ignore
+      }
+    }
+  }
 
   function handleRerunTour() {
     localStorage.removeItem("mindful-tour-complete");
@@ -58,6 +145,7 @@ export default function SettingsPage() {
   }
 
   const user = session?.user;
+  const usagePct = tokenBudget > 0 ? Math.round((tokensUsed / tokenBudget) * 100) : 0;
 
   return (
     <div className="flex-1 flex flex-col items-center px-4 pt-10 pb-20">
@@ -164,6 +252,132 @@ export default function SettingsPage() {
               </a>
               <p className="text-xs text-muted italic">
                 Tap the link, then tap Start in Telegram.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* Usage section */}
+        <section className="space-y-4">
+          <h2 className="text-xs uppercase tracking-widest text-muted">
+            Usage
+          </h2>
+          <div className="space-y-2">
+            <div
+              className="h-1.5 rounded-full overflow-hidden"
+              style={{ backgroundColor: "var(--border)" }}
+              role="progressbar"
+              aria-valuenow={tokensUsed}
+              aria-valuemax={tokenBudget}
+            >
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  backgroundColor: "var(--sage)",
+                  width: `${Math.min(usagePct, 100)}%`,
+                }}
+              />
+            </div>
+            <p className="text-sm text-muted">
+              {tokensUsed.toLocaleString()} / {tokenBudget.toLocaleString()} tokens
+              {hasKey && " (using your key)"}
+            </p>
+          </div>
+        </section>
+
+        {/* API Key section */}
+        <section className="space-y-4">
+          <h2 className="text-xs uppercase tracking-widest text-muted">
+            API Key
+          </h2>
+
+          {hasKey ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ backgroundColor: "var(--sage)" }}
+                />
+                <span className="text-sm" style={{ color: "var(--sage)" }}>
+                  API key connected
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <select
+                  value={modelInput}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="text-sm px-3 py-1.5 rounded-lg border bg-transparent"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <option value="claude-sonnet-4-6-20250627">
+                    Sonnet (recommended)
+                  </option>
+                  <option value="claude-opus-4-6">Opus</option>
+                </select>
+                <button
+                  onClick={handleRemoveKey}
+                  className="text-sm transition-colors hover:text-foreground text-muted"
+                >
+                  Remove key
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                  <input
+                    type={showKey ? "text" : "password"}
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="sk-ant-..."
+                    className="w-full px-3 py-2 text-sm rounded-lg border bg-transparent min-w-0"
+                    style={{ borderColor: "var(--border)" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted hover:text-foreground flex items-center justify-center"
+                    style={{ minWidth: "44px", minHeight: "44px" }}
+                  >
+                    {showKey ? "Hide" : "Show"}
+                  </button>
+                </div>
+                <select
+                  value={modelInput}
+                  onChange={(e) => setModelInput(e.target.value)}
+                  className="text-sm px-3 py-1.5 rounded-lg border bg-transparent"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <option value="claude-sonnet-4-6-20250627">Sonnet</option>
+                  <option value="claude-opus-4-6">Opus</option>
+                </select>
+              </div>
+              <button
+                onClick={handleSaveKey}
+                disabled={keySaveStatus === 'saving' || !apiKeyInput.trim()}
+                className="text-sm px-4 py-1.5 rounded-lg transition-colors border"
+                style={{
+                  borderColor: 'var(--border)',
+                  color: keySaveStatus === 'saved' ? 'var(--sage)' : keySaveStatus === 'error' ? '#c44' : 'var(--foreground)',
+                  opacity: keySaveStatus === 'saving' || !apiKeyInput.trim() ? 0.5 : 1,
+                }}
+              >
+                {keySaveStatus === 'idle' && 'Save key'}
+                {keySaveStatus === 'saving' && 'Validating...'}
+                {keySaveStatus === 'saved' && 'Key saved!'}
+                {keySaveStatus === 'error' && 'Invalid key — try again'}
+              </button>
+              <p className="text-xs text-muted italic">
+                Get your key at{" "}
+                <a
+                  href="https://console.anthropic.com/settings/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-foreground transition-colors"
+                >
+                  console.anthropic.com → API Keys
+                </a>
               </p>
             </div>
           )}
