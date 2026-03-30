@@ -1,8 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import {
-  getCoachingForEvent,
-  storeCoaching,
   getDailyIntention,
   needsReconnect,
   getUserAnnotationHistory,
@@ -15,6 +13,9 @@ import { getTodayEvents } from '@/lib/google-calendar';
 import { scoreEventPersonalized } from '@/lib/scoring';
 import { generateCoachingPrompt } from '@/lib/coaching';
 import { sendCoachingPrompt, sendTelegramMessage } from '@/lib/telegram';
+
+/** Skip prep/buffer/travel events that mirror a real meeting */
+const SKIP_PATTERNS = [/^📋\s*prep/i, /^prep:/i, /^travel/i, /^buffer/i, /^commute/i, /^focus\s*time/i];
 
 function escapeHtml(str: string): string {
   return str
@@ -110,8 +111,13 @@ export async function GET(request: NextRequest) {
       const intention = await getDailyIntention(userId, today);
       const annotationSummary = summarizeAnnotationPatterns(annotations);
 
-      for (let i = 0; i < events.length; i++) {
-        const event = events[i];
+      // Filter out prep/buffer events that mirror real meetings
+      const coachableEvents = events.filter(
+        (e) => !SKIP_PATTERNS.some((p) => p.test(e.title)),
+      );
+
+      for (let i = 0; i < coachableEvents.length; i++) {
+        const event = coachableEvents[i];
         const eventStart = new Date(event.start);
         const eventEnd = new Date(event.end);
         const minsUntilStart = (eventStart.getTime() - now.getTime()) / 60_000;
@@ -137,10 +143,6 @@ export async function GET(request: NextRequest) {
           // Lowered threshold: only skip truly low-stress events (score 1)
           if (result.score < 2) continue;
 
-          // Dedup: skip if already coached for this event
-          const existing = await getCoachingForEvent(event.id);
-          if (existing) continue;
-
           const similar = findSimilarAnnotations(annotations, event.title);
           const calendarDensity = computeCalendarDensity(events, i);
 
@@ -158,17 +160,27 @@ export async function GET(request: NextRequest) {
             },
           );
 
+          // Atomic dedup: try to claim this event in the DB first.
+          // If another cron run already stored it, the unique constraint
+          // on eventId will throw and we skip sending.
+          try {
+            await prisma.sentCoaching.create({
+              data: {
+                userId,
+                eventId: event.id,
+                eventTitle: event.title,
+                pillar: result.pillar,
+                content,
+                channel: 'telegram',
+              },
+            });
+          } catch {
+            // Unique constraint violation → already sent by another run
+            continue;
+          }
+
           try {
             await sendCoachingPrompt(chatId, event.title, content);
-
-            await storeCoaching({
-              id: `${event.id}-${Date.now()}`,
-              eventId: event.id,
-              pillar: result.pillar,
-              content,
-              sentAt: now.toISOString(),
-              channel: 'telegram',
-            });
             coached++;
           } catch (sendErr) {
             console.error(`Failed to send coaching to user ${userId}:`, sendErr);
@@ -177,15 +189,23 @@ export async function GET(request: NextRequest) {
 
         // Post-event reflection: events that ended within the last 10 minutes
         if (minsSinceEnd > 0 && minsSinceEnd <= 10) {
-          const existing = await getCoachingForEvent(event.id);
-          if (existing && !existing.responseScore) {
-            try {
-              const text = `How did <i>${escapeHtml(event.title)}</i> go? Reply 1-5`;
-              await sendTelegramMessage(chatId, text, 'HTML');
-              reflections++;
-            } catch (reflErr) {
-              console.error(`Failed to send reflection to user ${userId}:`, reflErr);
-            }
+          // Atomic dedup: only send reflection if one hasn't been sent yet
+          try {
+            const updated = await prisma.sentCoaching.updateMany({
+              where: { eventId: event.id, reflectionSentAt: null, responseScore: null },
+              data: { reflectionSentAt: new Date() },
+            });
+            if (updated.count === 0) continue;
+          } catch {
+            continue;
+          }
+
+          try {
+            const text = `How did <i>${escapeHtml(event.title)}</i> go? Reply 1-5`;
+            await sendTelegramMessage(chatId, text, 'HTML');
+            reflections++;
+          } catch (reflErr) {
+            console.error(`Failed to send reflection to user ${userId}:`, reflErr);
           }
         }
       }

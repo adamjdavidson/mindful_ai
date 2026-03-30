@@ -32,6 +32,13 @@ export async function generateCoachingPrompt(
   const systemParts = [
     'You are a mindful coach. Generate ONE sentence for someone about to enter a meeting.',
     `Focus on the ${pillar} pillar.`,
+    '',
+    'CRITICAL RULES:',
+    '- Reference the specific event by name or purpose. If the title hints at the topic (e.g. "Creative Block", "Budget Review", "1:1 with Sarah"), address that directly.',
+    '- NEVER use generic mindfulness cliches like "take three slow breaths", "notice your feet on the floor", or "be present". These are overused and unhelpful.',
+    '- Each prompt must feel unique to THIS specific meeting and person.',
+    '- Be concrete and actionable, not vague and calming.',
+    '',
   ];
 
   if (context.acipProfile) {
@@ -83,7 +90,7 @@ export async function generateCoachingPrompt(
     systemParts.push(`Their day: ${context.calendarDensity}`);
   }
 
-  systemParts.push('Be warm, specific, under 30 words. No greeting, no sign-off.');
+  systemParts.push('Be warm, specific to this meeting, under 30 words. No greeting, no sign-off.');
 
   const attendeeContext =
     attendees.length > 0
@@ -105,14 +112,23 @@ export async function generateCoachingPrompt(
       return block.text.trim();
     }
 
-    return pickFallback(pillar);
+    return pickFallback(pillar, eventTitle);
   } catch (error) {
     console.error('Coaching prompt generation failed:', error);
-    return pickFallback(pillar);
+    return pickFallback(pillar, eventTitle);
   }
 }
 
-function pickFallback(pillar: Pillar): string {
+/**
+ * Pick a fallback prompt using a simple hash of the event title
+ * so different events get different prompts deterministically.
+ */
+function pickFallback(pillar: Pillar, seed: string): string {
   const prompts = FALLBACK_PROMPTS[pillar];
-  return prompts[Math.floor(Math.random() * prompts.length)];
+  // Simple string hash for deterministic variety
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  return prompts[Math.abs(hash) % prompts.length];
 }

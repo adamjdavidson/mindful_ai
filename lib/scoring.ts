@@ -18,23 +18,35 @@ export interface ScoringResult {
   source: 'user-exact' | 'user-similar' | 'claude-estimate' | 'default';
 }
 
-/** Static fallback prompts when Claude API is unavailable, 2 per pillar. */
+/** Static fallback prompts when Claude API is unavailable, 5 per pillar. */
 export const FALLBACK_PROMPTS: Record<Pillar, string[]> = {
   awareness: [
-    'Take three slow breaths before you begin.',
-    'Notice your feet on the floor. Notice your hands. You are here.',
+    'Before you speak, pause and notice what emotion is driving you right now.',
+    'What physical sensation are you carrying into this meeting? Name it.',
+    'Check in: are you rushing to get through this, or arriving into it?',
+    'What story is your mind already telling about how this will go?',
+    'Where in your body do you feel readiness or resistance right now?',
   ],
   connection: [
-    'What does the other person need from this conversation?',
-    'How might they be feeling right now? What would help them?',
+    'What does the other person need from this conversation that they might not say?',
+    'How might they be feeling walking in? What context are they carrying?',
+    'Listen for what matters to them underneath their words today.',
+    'What question could you ask that shows you see them, not just the agenda?',
+    'Who in this meeting might need to be heard more than usual?',
   ],
   insight: [
-    'What assumptions are you bringing to this? Are they true?',
-    'What would you notice if you watched this situation from the outside?',
+    'What assumption are you making about this meeting that might not be true?',
+    'If you were advising a friend in this exact situation, what would you say?',
+    'What would you notice if you watched this conversation from the outside?',
+    'What pattern from past meetings like this one are you repeating?',
+    'What is the one thing you could learn here that would change your perspective?',
   ],
   purpose: [
-    'What matters most to you in this conversation?',
-    'How does this connect to what you care about?',
+    'What is the one outcome from this meeting that would make it worthwhile?',
+    'How does this conversation connect to what you actually care about this week?',
+    'If you could only say one thing in this meeting, what would it be?',
+    'What would make you proud of how you showed up here?',
+    'What are you protecting by not saying what you really think?',
   ],
 };
 
@@ -106,7 +118,9 @@ export async function scoreEventPersonalized(
 
     const block = response.content[0];
     if (block.type === 'text') {
-      const parsed = JSON.parse(block.text);
+      // Strip markdown code fences if Claude wrapped the JSON
+      const jsonText = block.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+      const parsed = JSON.parse(jsonText);
       const score = Math.max(1, Math.min(5, Math.round(parsed.score)));
       const pillar = validatePillar(parsed.pillar);
       return { score, pillar, source: 'claude-estimate' };

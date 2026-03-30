@@ -100,3 +100,17 @@ model CompanionProfile {
   dailyIntention   String?
   user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model SentCoaching {
+  id               String    @id @default(cuid())
+  userId           String
+  eventId          String    @unique
+  eventTitle       String
+  pillar           String
+  content          String    @db.Text
+  sentAt           DateTime  @default(now())
+  channel          String    @default("telegram")
+  responseScore    Int?
+  responseText     String?
+  reflectionSentAt DateTime?
+}

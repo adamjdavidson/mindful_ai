@@ -185,80 +185,58 @@ export async function getCachedEvents(
 /*  "coachingDays" keys.                                               */
 /* ------------------------------------------------------------------ */
 
-export async function storeCoaching(record: CoachingRecord): Promise<void> {
-  // We need a userId to store — derive from the event context.
-  // Since coaching is keyed by eventId and we don't have userId in the record,
-  // store in a global-ish fashion: use a dedicated approach via annotations.
-  // For simplicity, store coaching keyed by eventId in all profiles that have
-  // cached events containing this eventId, OR use a separate storage approach.
-  //
-  // Pragmatic approach: store coaching records in the eventAnnotations JSON
-  // keyed by eventId. We need to find which user owns this event.
-  // Since the cron job iterates by userId, we pass through the profile.
-
-  // Store by eventId for dedup lookups
-  const date = record.sentAt.slice(0, 10);
-
-  // Find which user profile has this event cached, or just store globally
-  // For now, store coaching in all profiles that match (the cron context ensures
-  // the right user). We use a findMany + update approach.
-  const profiles = await prisma.companionProfile.findMany();
-
-  for (const profile of profiles) {
-    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
-    const coaching = (annotations.coaching as Record<string, unknown>) ?? {};
-    const coachingDays = (annotations.coachingDays as Record<string, unknown[]>) ?? {};
-
-    // Check if this profile's event cache contains this eventId
-    const eventCache = (annotations.eventCache as Record<string, CompanionEvent[]>) ?? {};
-    const hasEvent = Object.values(eventCache).some((events) =>
-      events?.some?.((e) => e.id === record.eventId),
-    );
-
-    if (hasEvent || Object.keys(profiles).length === 1) {
-      const dayList = coachingDays[date] ?? [];
-      await prisma.companionProfile.update({
-        where: { id: profile.id },
-        data: {
-          eventAnnotations: {
-            ...annotations,
-            coaching: { ...coaching, [record.eventId]: record },
-            coachingDays: {
-              ...coachingDays,
-              [date]: [...dayList, record],
-            },
-          } as JsonValue,
-        },
-      });
-      break;
-    }
-  }
+export async function storeCoaching(
+  record: CoachingRecord & { userId: string; eventTitle: string },
+): Promise<void> {
+  await prisma.sentCoaching.create({
+    data: {
+      userId: record.userId,
+      eventId: record.eventId,
+      eventTitle: record.eventTitle,
+      pillar: record.pillar,
+      content: record.content,
+      sentAt: new Date(record.sentAt),
+      channel: record.channel,
+    },
+  });
 }
 
 export async function getCoachingForEvent(
   eventId: string,
 ): Promise<CoachingRecord | null> {
-  const profiles = await prisma.companionProfile.findMany();
-  for (const profile of profiles) {
-    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
-    const coaching = (annotations.coaching as Record<string, CoachingRecord>) ?? {};
-    if (coaching[eventId]) return coaching[eventId];
-  }
-  return null;
+  const row = await prisma.sentCoaching.findUnique({ where: { eventId } });
+  if (!row) return null;
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    pillar: row.pillar as CoachingRecord['pillar'],
+    content: row.content,
+    sentAt: row.sentAt.toISOString(),
+    channel: row.channel as CoachingRecord['channel'],
+    responseScore: row.responseScore ?? undefined,
+    responseText: row.responseText ?? undefined,
+  };
 }
 
 export async function getDayCoachings(date: string, userId?: string): Promise<CoachingRecord[]> {
-  const where = userId ? { userId } : {};
-  const profiles = await prisma.companionProfile.findMany({ where });
-  const all: CoachingRecord[] = [];
-  for (const profile of profiles) {
-    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
-    const coachingDays = (annotations.coachingDays as Record<string, CoachingRecord[]>) ?? {};
-    if (coachingDays[date]) {
-      all.push(...coachingDays[date]);
-    }
-  }
-  return all;
+  const dayStart = new Date(`${date}T00:00:00Z`);
+  const dayEnd = new Date(`${date}T23:59:59.999Z`);
+  const rows = await prisma.sentCoaching.findMany({
+    where: {
+      sentAt: { gte: dayStart, lte: dayEnd },
+      ...(userId ? { userId } : {}),
+    },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    eventId: row.eventId,
+    pillar: row.pillar as CoachingRecord['pillar'],
+    content: row.content,
+    sentAt: row.sentAt.toISOString(),
+    channel: row.channel as CoachingRecord['channel'],
+    responseScore: row.responseScore ?? undefined,
+    responseText: row.responseText ?? undefined,
+  }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -270,39 +248,13 @@ export async function storeReflection(
   score: number,
   text?: string,
 ): Promise<void> {
-  const profiles = await prisma.companionProfile.findMany();
-  for (const profile of profiles) {
-    const annotations = (profile.eventAnnotations as Record<string, unknown>) ?? {};
-    const coaching = (annotations.coaching as Record<string, CoachingRecord>) ?? {};
-    if (!coaching[eventId]) continue;
-
-    const updated: CoachingRecord = {
-      ...coaching[eventId],
+  await prisma.sentCoaching.update({
+    where: { eventId },
+    data: {
       responseScore: score,
       ...(text !== undefined && { responseText: text }),
-    };
-
-    const coachingDays = (annotations.coachingDays as Record<string, CoachingRecord[]>) ?? {};
-
-    // Also update in the day list
-    const date = updated.sentAt.slice(0, 10);
-    const dayList = coachingDays[date] ?? [];
-    const updatedDayList = dayList.map((c) =>
-      c.eventId === eventId ? updated : c,
-    );
-
-    await prisma.companionProfile.update({
-      where: { id: profile.id },
-      data: {
-        eventAnnotations: {
-          ...annotations,
-          coaching: { ...coaching, [eventId]: updated },
-          coachingDays: { ...coachingDays, [date]: updatedDayList },
-        } as JsonValue,
-      },
-    });
-    break;
-  }
+    },
+  });
 }
 
 /* ------------------------------------------------------------------ */
